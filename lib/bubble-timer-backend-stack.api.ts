@@ -36,19 +36,18 @@ export async function handler(event: any, context: any) {
 
                     console.log(`${body}`);
                     console.log(`Id: ${body.timer.id}, Name: ${body.timer.name}`);
-                    updateTimer({
+                    await updateTimer({
                         id: body.timer.id,
                         userId: cognitoUserName,
                         name: body.timer.name,
                         totalDuration: body.timer.totalDuration,
                         remainingDuration: body.timer.remainingDuration,
                         endTime: body.timer.endTime,
-                    }).then(_ => {
-                        resultBody = JSON.stringify({
-                            'result': {
-                                'hello': 'world'
-                            }
-                        });
+                    });
+                    resultBody = JSON.stringify({
+                        'result': {
+                            'hello': 'world'
+                        }
                     });
                 }
             }
