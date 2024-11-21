@@ -26,11 +26,14 @@ async function updateTimer(timer: Timer) {
             id: {
                 S: timer.id,
             },
-            user_id: {
-                S: timer.userId,
-            }
         },
         AttributeUpdates: {
+            user_id: {
+                Value: {
+                    S: timer.userId!,
+                },
+                Action: 'PUT',
+            },
             name: {
                 Value: {
                     S: timer.name!,
