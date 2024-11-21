@@ -106,4 +106,5 @@ function convertItemToTimer(item: { [key: string] : AttributeValue }) {
 export {
     getTimer,
     updateTimer,
+    Timer,
 }
