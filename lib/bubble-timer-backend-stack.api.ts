@@ -43,6 +43,12 @@ export async function handler(event: any, context: any) {
                         totalDuration: body.timer.totalDuration,
                         remainingDuration: body.timer.remainingDuration,
                         endTime: body.timer.endTime,
+                    }).then(_ => {
+                        resultBody = JSON.stringify({
+                            'result': {
+                                'hello': 'world'
+                            }
+                        });
                     });
                 }
             }

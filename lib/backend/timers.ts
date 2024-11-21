@@ -68,7 +68,7 @@ async function updateTimer(timer: Timer) {
 async function getTimer(timerId: string) {
     const client = new DynamoDBClient({ region: "us-east-1" });
     const command = new GetItemCommand({
-        TableName: process.env.COACHES_TABLE_NAME,
+        TableName: process.env.TIMERS_TABLE_NAME,
         Key: {
             id: {
                 S: timerId,
