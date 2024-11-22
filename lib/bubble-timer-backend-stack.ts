@@ -4,7 +4,7 @@ import { Stack, StackProps } from "aws-cdk-lib";
 import { AuthorizationType, CognitoUserPoolsAuthorizer, CorsOptions, LambdaRestApi } from 'aws-cdk-lib/aws-apigateway';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { AttributeType, BillingMode, ProjectionType, Table } from "aws-cdk-lib/aws-dynamodb";
-import { WebSocketApi, WebSocketAuthorizer } from "aws-cdk-lib/aws-apigatewayv2";
+import { WebSocketApi, WebSocketAuthorizer, WebSocketStage } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpUserPoolAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { WebSocketLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 
@@ -65,21 +65,27 @@ export class BackendStack extends Stack {
         });
 
         // WebSocket API
-        const websocketBackendFunction = new NodejsFunction(this, 'websocket');
-        const websocketApi = new WebSocketApi(this, 'WebsocketAPI', {
+        const webSocketBackendFunction = new NodejsFunction(this, 'websocket');
+        const webSocketApi = new WebSocketApi(this, 'WebsocketAPI', {
             connectRouteOptions: {
-                integration: new WebSocketLambdaIntegration('ConnectIntegration', websocketBackendFunction),
+                integration: new WebSocketLambdaIntegration('ConnectIntegration', webSocketBackendFunction),
             },
             disconnectRouteOptions: {
-                integration: new WebSocketLambdaIntegration('DisconnectIntegration', websocketBackendFunction),
+                integration: new WebSocketLambdaIntegration('DisconnectIntegration', webSocketBackendFunction),
             },
             defaultRouteOptions: {
-                integration: new WebSocketLambdaIntegration('DefaultIntegration', websocketBackendFunction),
+                integration: new WebSocketLambdaIntegration('DefaultIntegration', webSocketBackendFunction),
             },
         });
 
-        websocketApi.addRoute('sendMessage', {
-            integration: new WebSocketLambdaIntegration('SendMessageIntegration', websocketBackendFunction),
+        webSocketApi.addRoute('sendMessage', {
+            integration: new WebSocketLambdaIntegration('SendMessageIntegration', webSocketBackendFunction),
+        });
+
+        new WebSocketStage(this, 'WebsocketAPIStage', {
+            webSocketApi,
+            stageName: 'prod',
+            autoDeploy: true,
         });
 
         // DDB TABLES
@@ -99,9 +105,9 @@ export class BackendStack extends Stack {
             },
         });
         timersTable.grantFullAccess(apiBackendFunction);
-        timersTable.grantFullAccess(websocketBackendFunction);
+        timersTable.grantFullAccess(webSocketBackendFunction);
         apiBackendFunction.addEnvironment('TIMERS_TABLE_NAME', timersTable.tableName);
-        websocketBackendFunction.addEnvironment('TIMERS_TABLE_NAME', timersTable.tableName);
+        webSocketBackendFunction.addEnvironment('TIMERS_TABLE_NAME', timersTable.tableName);
 
         // JOIN TABLES
     }
