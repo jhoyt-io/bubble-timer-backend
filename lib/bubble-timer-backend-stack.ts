@@ -4,6 +4,9 @@ import { Stack, StackProps } from "aws-cdk-lib";
 import { AuthorizationType, CognitoUserPoolsAuthorizer, CorsOptions, LambdaRestApi } from 'aws-cdk-lib/aws-apigateway';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { AttributeType, BillingMode, ProjectionType, Table } from "aws-cdk-lib/aws-dynamodb";
+import { WebSocketApi, WebSocketAuthorizer } from "aws-cdk-lib/aws-apigatewayv2";
+import { HttpUserPoolAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
+import { WebSocketLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 
 export interface BackendStackProps extends StackProps {
     readonly userPoolArn: string;
@@ -25,12 +28,13 @@ export class BackendStack extends Stack {
     constructor(app: Construct, stackName: string, props: BackendStackProps) {
         super(app, stackName, props);
 
+        const userPool = UserPool.fromUserPoolArn(this, 'UserPool', props.userPoolArn);
+
+        // REST API
         const apiBackendFunction = new NodejsFunction(this, 'api');
 
         const auth = new CognitoUserPoolsAuthorizer(this, 'apiAuthorizer', {
-            cognitoUserPools: [
-                UserPool.fromUserPoolArn(this, 'UserPool', props.userPoolArn),
-            ],
+            cognitoUserPools: [ userPool ],
         });
 
         const restApi = new LambdaRestApi(this, 'API', {
@@ -60,6 +64,24 @@ export class BackendStack extends Stack {
             authorizationType: AuthorizationType.COGNITO,
         });
 
+        // WebSocket API
+        const websocketBackendFunction = new NodejsFunction(this, 'websocket');
+        const websocketApi = new WebSocketApi(this, 'WebsocketAPI', {
+            connectRouteOptions: {
+                integration: new WebSocketLambdaIntegration('ConnectIntegration', websocketBackendFunction),
+            },
+            disconnectRouteOptions: {
+                integration: new WebSocketLambdaIntegration('DisconnectIntegration', websocketBackendFunction),
+            },
+            defaultRouteOptions: {
+                integration: new WebSocketLambdaIntegration('DefaultIntegration', websocketBackendFunction),
+            },
+        });
+
+        websocketApi.addRoute('sendMessage', {
+            integration: new WebSocketLambdaIntegration('SendMessageIntegration', websocketBackendFunction),
+        });
+
         // DDB TABLES
         const timersTable = new Table(this, 'Timers', {
             partitionKey: {
@@ -77,7 +99,9 @@ export class BackendStack extends Stack {
             },
         });
         timersTable.grantFullAccess(apiBackendFunction);
+        timersTable.grantFullAccess(websocketBackendFunction);
         apiBackendFunction.addEnvironment('TIMERS_TABLE_NAME', timersTable.tableName);
+        websocketBackendFunction.addEnvironment('TIMERS_TABLE_NAME', timersTable.tableName);
 
         // JOIN TABLES
     }
