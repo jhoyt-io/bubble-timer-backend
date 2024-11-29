@@ -1,5 +1,6 @@
 // import { getTimer, updateTimer, Timer } from "./backend/timers";
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
+import { updateConnection } from './backend/connections';
 
 const jwtVerifier = CognitoJwtVerifier.create({
     userPoolId: 'us-east-1_cjED6eOHp',
@@ -17,12 +18,40 @@ export async function handler(event: any, context: any) {
     const connectionId = event.requestContext.connectionId;
     const cognitoToken = event.headers.Authorization;
 
-    const resultBody: string = "{}";
+    let cognitoUserName;
+    let resultBody = "{}";
     try {
         const payload = await jwtVerifier.verify(cognitoToken);
         console.log("Token is valid. Payload: ", payload);
+
+        cognitoUserName = payload['cognito:username'];
     } catch {
         console.log("Token not valid!");
+    }
+
+    if (cognitoUserName) {
+        if (event.requestContext.eventType === 'CONNECT') {
+            try {
+                await updateConnection({
+                    userId: cognitoUserName,
+                    deviceId: 'test',
+                    connectionId: event.requestContext.connectionId,
+                });
+                console.log("Updated connection!");
+            } catch(e) {
+                console.log("FAILED to update connection!");
+            }
+        } else if (event.requestContext.eventType === 'DISCONNECT') {
+            try {
+                await updateConnection({
+                    userId: cognitoUserName,
+                    deviceId: 'test',
+                });
+                console.log("Updated connection!");
+            } catch(e) {
+                console.log("FAILED to update connection!");
+            }
+        }
     }
 
     return {

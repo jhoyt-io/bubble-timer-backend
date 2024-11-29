@@ -109,6 +109,18 @@ export class BackendStack extends Stack {
         apiBackendFunction.addEnvironment('TIMERS_TABLE_NAME', timersTable.tableName);
         webSocketBackendFunction.addEnvironment('TIMERS_TABLE_NAME', timersTable.tableName);
 
+        const userConnectionsTable = new Table(this, 'UserConnections', {
+            partitionKey: {
+                name: 'user_id', type: AttributeType.STRING
+            },
+            sortKey: {
+                name: 'device_id', type: AttributeType.STRING
+            },
+            billingMode: BillingMode.PAY_PER_REQUEST,
+        });
+        userConnectionsTable.grantFullAccess(webSocketBackendFunction);
+        webSocketBackendFunction.addEnvironment('USER_CONNECTIONS_TABLE_NAME', userConnectionsTable.tableName);
+
         // JOIN TABLES
     }
 }
