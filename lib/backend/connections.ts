@@ -96,10 +96,7 @@ async function getConnectionById(connectionId: string) {
     const command = new QueryCommand({
         TableName: process.env.USER_CONNECTIONS_TABLE_NAME,
         IndexName: 'ConnectionsByConnectionId',
-        AttributesToGet: [
-            'user_id',
-            'device_id',
-        ],
+        ProjectionExpression: 'user_id, device_id',
         ExpressionAttributeValues: {
             ':connectionId': {
                 'S': connectionId
