@@ -118,6 +118,12 @@ export class BackendStack extends Stack {
             },
             billingMode: BillingMode.PAY_PER_REQUEST,
         });
+        userConnectionsTable.addGlobalSecondaryIndex({
+            indexName: 'ConnectionsByConnectionId',
+            partitionKey: {
+                name: 'connection_id', type: AttributeType.STRING
+            },
+        })
         userConnectionsTable.grantFullAccess(webSocketBackendFunction);
         webSocketBackendFunction.addEnvironment('USER_CONNECTIONS_TABLE_NAME', userConnectionsTable.tableName);
 

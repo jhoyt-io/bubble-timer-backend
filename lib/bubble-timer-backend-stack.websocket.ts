@@ -1,6 +1,6 @@
 // import { getTimer, updateTimer, Timer } from "./backend/timers";
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
-import { updateConnection } from './backend/connections';
+import { getConnection, getConnectionById, updateConnection } from './backend/connections';
 
 const jwtVerifier = CognitoJwtVerifier.create({
     userPoolId: 'us-east-1_cjED6eOHp',
@@ -42,6 +42,7 @@ export async function handler(event: any, context: any) {
             } catch(e) {
                 console.log("FAILED to update connection!");
             }
+        // This may not be reachable, since auth header isn't sent on graceful shutdown
         } else if (event.requestContext.eventType === 'DISCONNECT') {
             try {
                 await updateConnection({
@@ -53,7 +54,22 @@ export async function handler(event: any, context: any) {
                 console.log("FAILED to update connection!");
             }
         }
+    } else if (connectionId) {
+        const connection = await getConnectionById(connectionId);
+
+        if (connection) {
+            try {
+                await updateConnection({
+                    ...connection,
+                    connectionId: undefined,
+                });
+                console.log("Updated connection!");
+            } catch (e) {
+                console.log("FAILED to update connection!");
+            }
+        }
     }
+
 
     return {
         "isBase64Encoded": false,

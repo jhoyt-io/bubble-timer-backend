@@ -91,6 +91,38 @@ async function getConnection(userId: string, deviceId: string) {
     }
 }
 
+async function getConnectionById(connectionId: string) {
+    const client = new DynamoDBClient({ region: "us-east-1" });
+    const command = new QueryCommand({
+        TableName: process.env.USER_CONNECTIONS_TABLE_NAME,
+        IndexName: 'ConnectionsByConnectionId',
+        AttributesToGet: [
+            'user_id',
+            'device_id',
+        ],
+        ExpressionAttributeValues: {
+            ':connectionId': {
+                'S': connectionId
+            }
+        },
+        KeyConditionExpression: 'connection_id = :connectionId',
+    });
+
+    try {
+        const results = await client.send(command);
+        console.log("DDB Response: " + JSON.stringify(results));
+
+        if (results.Items) {
+            return convertItemToConnection(results.Items[0]);
+        }
+
+        return null;
+    } catch(err) {
+        console.error("DDB Error: " + err);
+        return null;
+    }
+}
+
 function convertItemToConnection(item: { [key: string] : AttributeValue }) {
     const timer = new Connection(
         item.user_id.S!,
@@ -103,6 +135,7 @@ function convertItemToConnection(item: { [key: string] : AttributeValue }) {
 
 export {
     getConnection,
+    getConnectionById,
     updateConnection,
     Connection,
 }
