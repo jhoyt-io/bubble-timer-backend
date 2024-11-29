@@ -17,6 +17,7 @@ export async function handler(event: any, context: any) {
 
     const connectionId = event.requestContext.connectionId;
     const cognitoToken = event.headers.Authorization;
+    const deviceId = event.headers.DeviceId;
 
     let cognitoUserName;
     let resultBody = "{}";
@@ -34,8 +35,8 @@ export async function handler(event: any, context: any) {
             try {
                 await updateConnection({
                     userId: cognitoUserName,
-                    deviceId: 'test',
-                    connectionId: event.requestContext.connectionId,
+                    deviceId,
+                    connectionId,
                 });
                 console.log("Updated connection!");
             } catch(e) {
@@ -45,7 +46,7 @@ export async function handler(event: any, context: any) {
             try {
                 await updateConnection({
                     userId: cognitoUserName,
-                    deviceId: 'test',
+                    deviceId,
                 });
                 console.log("Updated connection!");
             } catch(e) {
