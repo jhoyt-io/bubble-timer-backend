@@ -76,7 +76,7 @@ export async function handler(event: any, context: any) {
                     // Don't send back to self...
                     if (connection.deviceId !== deviceId) {
                         const command = new PostToConnectionCommand({
-                            Data: Buffer.from(data),
+                            Data: data,
                             ConnectionId: connection.connectionId,
                         });
 
