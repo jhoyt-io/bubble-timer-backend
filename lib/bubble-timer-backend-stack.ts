@@ -77,6 +77,7 @@ export class BackendStack extends Stack {
                 integration: new WebSocketLambdaIntegration('DefaultIntegration', webSocketBackendFunction),
             },
         });
+        webSocketApi.grantManageConnections(webSocketBackendFunction);
 
         webSocketApi.addRoute('sendmessage', {
             integration: new WebSocketLambdaIntegration('SendMessageIntegration', webSocketBackendFunction),
