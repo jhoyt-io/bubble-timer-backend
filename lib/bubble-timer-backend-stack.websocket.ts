@@ -65,7 +65,8 @@ export async function handler(event: any, context: any) {
                 console.log("FAILED to update connection!");
             }
         } else if (event.requestContext.routeKey === 'sendmessage') {
-            const data = event.body.data;
+            const body = JSON.parse(event.body);
+            const data = body.data;
 
             if (data.type === 'activeTimerList') {
                 console.log('Got ', data.type, ' sending to all connections for user id ', cognitoUserName);
