@@ -1,19 +1,19 @@
 // import { getTimer, updateTimer, Timer } from "./backend/timers";
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
-import { getConnection, getConnectionById, updateConnection } from './backend/connections';
+import { getConnectionById, getConnectionsByUserId, updateConnection } from './backend/connections';
+import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 
 const jwtVerifier = CognitoJwtVerifier.create({
     userPoolId: 'us-east-1_cjED6eOHp',
     tokenUse: 'id',
     clientId: '4t3c5p3875qboh3p1va2t9q63c',
-})
+});
+
+const connectionClient = new ApiGatewayManagementApiClient();
 
 export async function handler(event: any, context: any) {
     console.log("Event: " + JSON.stringify(event));
     console.log("Context: " + JSON.stringify(context));
-
-    //     "body": "{\"action\":\"sendmessage\",\"data\":{\"Hello\":\"WORLD?????\"}}",
-    event.body
 
     const connectionId = event.requestContext.connectionId;
     const cognitoToken = event.headers.Authorization;
@@ -52,6 +52,25 @@ export async function handler(event: any, context: any) {
                 console.log("Updated connection!");
             } catch(e) {
                 console.log("FAILED to update connection!");
+            }
+        } else if (event.requestContext.routeKey === 'sendmessage') {
+            const data = event.body.data;
+
+            if (data.type === 'activeTimerList') {
+                console.log('Got ', data.type, ' sending to all connections for user id ', cognitoUserName);
+
+                const connectionsForUser = await getConnectionsByUserId(cognitoUserName);
+                connectionsForUser?.forEach(connection => {
+                    // Don't send back to self...
+                    if (connection.deviceId !== deviceId) {
+                        const command = new PostToConnectionCommand({
+                            Data: Buffer.from(data),
+                            ConnectionId: connection.connectionId,
+                        });
+
+                        connectionClient.send(command);
+                    }
+                });
             }
         }
     } else if (connectionId) {
