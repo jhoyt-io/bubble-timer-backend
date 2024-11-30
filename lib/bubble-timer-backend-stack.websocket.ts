@@ -16,19 +16,29 @@ export async function handler(event: any, context: any) {
     console.log("Context: " + JSON.stringify(context));
 
     const connectionId = event.requestContext.connectionId;
-    const cognitoToken = event.headers.Authorization;
-    const deviceId = event.headers.DeviceId;
-
     let cognitoUserName;
+    let deviceId;
     let resultBody = "{}";
-    try {
-        const payload = await jwtVerifier.verify(cognitoToken);
-        console.log("Token is valid. Payload: ", payload);
 
-        cognitoUserName = payload['cognito:username'];
-    } catch {
-        console.log("Token not valid!");
+    if (event.headers) {
+        const cognitoToken = event.headers.Authorization;
+        deviceId = event.headers.DeviceId;
+
+        try {
+            const payload = await jwtVerifier.verify(cognitoToken);
+            console.log("Token is valid. Payload: ", payload);
+
+            cognitoUserName = payload['cognito:username'];
+        } catch {
+            console.log("Token not valid!");
+        }
+    } else {
+        const connection = await getConnectionById(connectionId);
+
+        cognitoUserName = connection?.userId;
+        deviceId = connection?.deviceId;
     }
+
 
     if (cognitoUserName) {
         if (event.requestContext.eventType === 'CONNECT') {
@@ -48,6 +58,7 @@ export async function handler(event: any, context: any) {
                 await updateConnection({
                     userId: cognitoUserName,
                     deviceId,
+                    connectionId: undefined,
                 });
                 console.log("Updated connection!");
             } catch(e) {
@@ -71,20 +82,6 @@ export async function handler(event: any, context: any) {
                         connectionClient.send(command);
                     }
                 });
-            }
-        }
-    } else if (connectionId) {
-        const connection = await getConnectionById(connectionId);
-
-        if (connection) {
-            try {
-                await updateConnection({
-                    ...connection,
-                    connectionId: undefined,
-                });
-                console.log("Updated connection!");
-            } catch (e) {
-                console.log("FAILED to update connection!");
             }
         }
     }
