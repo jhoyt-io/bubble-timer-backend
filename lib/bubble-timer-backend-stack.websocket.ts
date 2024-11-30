@@ -2,6 +2,7 @@
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import { getConnectionById, getConnectionsByUserId, updateConnection } from './backend/connections';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
+import { send } from 'process';
 
 const jwtVerifier = CognitoJwtVerifier.create({
     userPoolId: 'us-east-1_cjED6eOHp',
@@ -9,7 +10,9 @@ const jwtVerifier = CognitoJwtVerifier.create({
     clientId: '4t3c5p3875qboh3p1va2t9q63c',
 });
 
-const connectionClient = new ApiGatewayManagementApiClient();
+const connectionClient = new ApiGatewayManagementApiClient({
+    endpoint: 'https://zc4ahryh1l.execute-api.us-east-1.amazonaws.com/prod/',
+});
 
 export async function handler(event: any, context: any) {
     console.log("Event: " + JSON.stringify(event));
@@ -72,17 +75,23 @@ export async function handler(event: any, context: any) {
                 console.log('Got ', data.type, ' sending to all connections for user id ', cognitoUserName);
 
                 const connectionsForUser = await getConnectionsByUserId(cognitoUserName);
-                connectionsForUser?.forEach(connection => {
-                    // Don't send back to self...
-                    if (connection.deviceId !== deviceId) {
-                        const command = new PostToConnectionCommand({
-                            Data: JSON.stringify(data),
-                            ConnectionId: connection.connectionId,
-                        });
+                if (connectionsForUser) {
+                    const sendMessages = connectionsForUser?.map(connection => {
+                        // Don't send back to self...
+                        if (connection.deviceId !== deviceId) {
+                            const command = new PostToConnectionCommand({
+                                Data: JSON.stringify(data),
+                                ConnectionId: connection.connectionId,
+                            });
 
-                        connectionClient.send(command);
-                    }
-                });
+                            return connectionClient.send(command);
+                        }
+
+                        return Promise.resolve();
+                    });
+
+                    await Promise.all(sendMessages);
+                }
             }
         }
     }
