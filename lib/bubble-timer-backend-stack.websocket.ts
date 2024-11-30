@@ -3,6 +3,7 @@ import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import { getConnectionById, getConnectionsByUserId, updateConnection } from './backend/connections';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 import { send } from 'process';
+import { CfnLocalGatewayRouteTableVirtualInterfaceGroupAssociation } from 'aws-cdk-lib/aws-ec2';
 
 const jwtVerifier = CognitoJwtVerifier.create({
     userPoolId: 'us-east-1_cjED6eOHp',
@@ -76,21 +77,27 @@ export async function handler(event: any, context: any) {
 
                 const connectionsForUser = await getConnectionsByUserId(cognitoUserName);
                 if (connectionsForUser) {
-                    const sendMessages = connectionsForUser?.map(connection => {
-                        // Don't send back to self...
-                        if (connection.deviceId !== deviceId) {
+                    connectionsForUser?.forEach(connection => {
+                        if (connection.deviceId !== deviceId  // Don't send back to self...
+                            && connection.connectionId        // Ensure has active connection
+                        ) {
                             const command = new PostToConnectionCommand({
                                 Data: JSON.stringify(data),
                                 ConnectionId: connection.connectionId,
                             });
 
-                            return connectionClient.send(command);
+                            connectionClient.send(command)
+                                .catch(reason => {
+                                    console.log('Removing connection, got exception: ', reason);
+
+                                    updateConnection({
+                                        userId: cognitoUserName,
+                                        deviceId: connection.deviceId,
+                                        connectionId: undefined,
+                                    });
+                                });
                         }
-
-                        return Promise.resolve();
                     });
-
-                    await Promise.all(sendMessages);
                 }
             }
         }
