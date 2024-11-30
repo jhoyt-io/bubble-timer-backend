@@ -99,8 +99,8 @@ function convertItemToTimer(item: { [key: string] : AttributeValue }) {
         item.user_id.S!,
         item.name.S!,
         item.total_duration.S!,
-        item.remaining_duration.S,
-        item.end_time.S,
+        item.remaining_duration?.S,
+        item.end_time?.S,
     );
 
     return timer;

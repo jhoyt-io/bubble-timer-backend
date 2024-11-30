@@ -96,7 +96,7 @@ async function getConnectionById(connectionId: string) {
     const command = new QueryCommand({
         TableName: process.env.USER_CONNECTIONS_TABLE_NAME,
         IndexName: 'ConnectionsByConnectionId',
-        ProjectionExpression: 'user_id, device_id',
+        ProjectionExpression: 'user_id, device_id, connection_id',
         ExpressionAttributeValues: {
             ':connectionId': {
                 'S': connectionId
@@ -124,7 +124,7 @@ function convertItemToConnection(item: { [key: string] : AttributeValue }) {
     const timer = new Connection(
         item.user_id.S!,
         item.device_id.S!,
-        item.connection_id.S,
+        item.connection_id?.S,
     );
 
     return timer;
