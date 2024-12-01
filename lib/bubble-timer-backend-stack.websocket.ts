@@ -2,8 +2,6 @@
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import { getConnectionById, getConnectionsByUserId, updateConnection } from './backend/connections';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
-import { send } from 'process';
-import { CfnLocalGatewayRouteTableVirtualInterfaceGroupAssociation } from 'aws-cdk-lib/aws-ec2';
 
 const jwtVerifier = CognitoJwtVerifier.create({
     userPoolId: 'us-east-1_cjED6eOHp',
@@ -72,7 +70,7 @@ export async function handler(event: any, context: any) {
             const body = JSON.parse(event.body);
             const data = body.data;
 
-            if (data.type === 'activeTimerList') {
+            if (data.type === 'activeTimerList' || data.type === 'updateTimer') {
                 console.log('Got ', data.type, ' sending to all connections for user id ', cognitoUserName);
 
                 const connectionsForUser = await getConnectionsByUserId(cognitoUserName);
