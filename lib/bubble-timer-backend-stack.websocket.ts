@@ -70,7 +70,7 @@ export async function handler(event: any, context: any) {
             const body = JSON.parse(event.body);
             const data = body.data;
 
-            if (data.type === 'activeTimerList' || data.type === 'updateTimer') {
+            if (data.type === 'activeTimerList' || data.type === 'updateTimer' || data.type === 'stopTimer') {
                 console.log('Got ', data.type, ' sending to all connections for user id ', cognitoUserName);
 
                 const connectionsForUser = await getConnectionsByUserId(cognitoUserName);
