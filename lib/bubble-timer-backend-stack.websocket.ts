@@ -70,37 +70,26 @@ export async function handler(event: any, context: any) {
             const body = JSON.parse(event.body);
             const data = body.data;
 
+            // Mirror messages to other devices
             if (data.type === 'activeTimerList' || data.type === 'updateTimer' || data.type === 'stopTimer') {
                 console.log('Got ', data.type, ' sending to all connections for user id ', cognitoUserName);
 
-                const connectionsForUser = await getConnectionsByUserId(cognitoUserName);
-                if (connectionsForUser) {
-                    connectionsForUser?.forEach(connection => {
-                        if (connection.deviceId !== deviceId  // Don't send back to self...
-                            && connection.connectionId        // Ensure has active connection
-                        ) {
-                            const command = new PostToConnectionCommand({
-                                Data: JSON.stringify(data),
-                                ConnectionId: connection.connectionId,
-                            });
+                await sendDataToUser(cognitoUserName, deviceId, data);
+            }
 
-                            connectionClient.send(command)
-                                .catch(reason => {
-                                    console.log('Removing connection, got exception: ', reason);
+            // Send timer updates to specified users
+            if (data.type === 'updateTimer' || data.type === 'deleTimer') {
+                console.log('Got ', data.type, ' sending to all users shared with', cognitoUserName);
 
-                                    updateConnection({
-                                        userId: cognitoUserName,
-                                        deviceId: connection.deviceId,
-                                        connectionId: undefined,
-                                    });
-                                });
-                        }
-                    });
-                }
+                Promise.allSettled(
+                    data.shareWith?.map((userName: string) => {
+                        console.log('Sending to: ', userName);
+                        return sendDataToUser(userName, deviceId, data);
+                    })
+                )
             }
         }
     }
-
 
     return {
         "isBase64Encoded": false,
@@ -112,5 +101,32 @@ export async function handler(event: any, context: any) {
             "Content-Type": "application/json",
         },
         "body": resultBody,
+    }
+}
+
+async function sendDataToUser(cognitoUserName: string, sentFrom: any, data: any) {
+    const connectionsForUser = await getConnectionsByUserId(cognitoUserName);
+    if (connectionsForUser) {
+        connectionsForUser?.forEach(connection => {
+            if (connection.deviceId !== sentFrom // Don't send back to self...
+                && connection.connectionId       // Ensure has active connection
+            ) {
+                const command = new PostToConnectionCommand({
+                    Data: JSON.stringify(data),
+                    ConnectionId: connection.connectionId,
+                });
+
+                connectionClient.send(command)
+                    .catch(reason => {
+                        console.log('Removing connection, got exception: ', reason);
+
+                        updateConnection({
+                            userId: cognitoUserName,
+                            deviceId: connection.deviceId,
+                            connectionId: undefined,
+                        });
+                    });
+            }
+        });
     }
 }
