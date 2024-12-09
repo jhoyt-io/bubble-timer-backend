@@ -1,6 +1,7 @@
 // import { getTimer, updateTimer, Timer } from "./backend/timers";
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import { getConnectionById, getConnectionsByUserId, updateConnection } from './backend/connections';
+import { stopTimer, updateTimer } from "./backend/timers";
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 
 const jwtVerifier = CognitoJwtVerifier.create({
@@ -78,7 +79,7 @@ export async function handler(event: any, context: any) {
             }
 
             // Send timer updates to specified users
-            if (data.type === 'updateTimer' || data.type === 'deleTimer') {
+            if (data.type === 'updateTimer' || data.type === 'stopTimer') {
                 console.log('Got ', data.type, ' sending to all users shared with', cognitoUserName);
 
                 Promise.allSettled(
@@ -87,6 +88,16 @@ export async function handler(event: any, context: any) {
                         return sendDataToUser(userName, deviceId, data);
                     })
                 )
+            }
+
+            // Update timer in ddb
+            if (data.type === 'updateTimer') {
+                await updateTimer(data.timer);
+            }
+
+            // Stop timer in ddb
+            if (data.type === 'stopTimer') {
+                await stopTimer(data.timerId);
             }
         }
     }

@@ -1,4 +1,4 @@
-import { AttributeValue, DynamoDBClient, GetItemCommand, GetItemOutput, QueryCommand, ScanCommand, UpdateItemCommand } from "@aws-sdk/client-dynamodb";
+import { AttributeValue, DeleteItemCommand, DynamoDBClient, GetItemCommand, GetItemOutput, QueryCommand, ScanCommand, UpdateItemCommand } from "@aws-sdk/client-dynamodb";
 
 class Timer {
     public id: string;
@@ -30,25 +30,13 @@ async function updateTimer(timer: Timer) {
         AttributeUpdates: {
             user_id: {
                 Value: {
-                    S: timer.userId!,
+                    S: timer.userId,
                 },
                 Action: 'PUT',
             },
             name: {
                 Value: {
-                    S: timer.name!,
-                },
-                Action: 'PUT',
-            },
-            total_duration: {
-                Value: {
-                    S: timer.totalDuration!,
-                },
-                Action: 'PUT',
-            },
-            remaining_duration: {
-                Value: {
-                    S: timer.remainingDuration!,
+                    S: timer.name,
                 },
                 Action: 'PUT',
             },
@@ -60,6 +48,38 @@ async function updateTimer(timer: Timer) {
             }
         },
     });
+    if (timer.totalDuration) {
+        command.input.AttributeUpdates!['total_duration'] = {
+            Value: { S: timer.totalDuration! },
+            Action: 'PUT',
+        }
+    } else {
+        command.input.AttributeUpdates!['total_duration'] = {
+            Action: 'DELETE',
+        }
+    }
+    if (timer.remainingDuration) {
+        command.input.AttributeUpdates!['remaining_duration'] = {
+            Value: { S: timer.remainingDuration! },
+            Action: 'PUT',
+        }
+    } else {
+        command.input.AttributeUpdates!['remaining_duration'] = {
+            Action: 'DELETE',
+        }
+    }
+    if (timer.endTime) {
+        command.input.AttributeUpdates!['end_time'] = {
+            Value: { S: timer.endTime! },
+            Action: 'PUT',
+        }
+    } else {
+        command.input.AttributeUpdates!['end_time'] = {
+            Action: 'DELETE',
+        }
+    }
+
+
     try {
         const results = await client.send(command);
         console.log("DDB Response: " + JSON.stringify(results));
@@ -93,6 +113,27 @@ async function getTimer(timerId: string) {
     }
 }
 
+async function stopTimer(timerId: string) {
+    const client = new DynamoDBClient({ region: "us-east-1" });
+    const command = new DeleteItemCommand({
+        TableName: process.env.TIMERS_TABLE_NAME,
+        Key: {
+            id: {
+                S: timerId,
+            },
+        },
+    });
+    try {
+        const results = await client.send(command);
+        console.log("DDB Response: " + JSON.stringify(results));
+
+        return;
+    } catch(err) {
+        console.error("DDB Error: " + err);
+        return;
+    }
+}
+
 function convertItemToTimer(item: { [key: string] : AttributeValue }) {
     const timer = new Timer(
         item.id.S!,
@@ -109,5 +150,6 @@ function convertItemToTimer(item: { [key: string] : AttributeValue }) {
 export {
     getTimer,
     updateTimer,
+    stopTimer,
     Timer,
 }
