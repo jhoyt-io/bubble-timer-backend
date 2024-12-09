@@ -40,17 +40,11 @@ async function updateTimer(timer: Timer) {
                 },
                 Action: 'PUT',
             },
-            end_time: {
-                Value: {
-                    S: timer.endTime!,
-                },
-                Action: 'PUT',
-            }
         },
     });
     if (timer.totalDuration) {
         command.input.AttributeUpdates!['total_duration'] = {
-            Value: { S: timer.totalDuration! },
+            Value: { S: timer.totalDuration },
             Action: 'PUT',
         }
     } else {
@@ -60,7 +54,7 @@ async function updateTimer(timer: Timer) {
     }
     if (timer.remainingDuration) {
         command.input.AttributeUpdates!['remaining_duration'] = {
-            Value: { S: timer.remainingDuration! },
+            Value: { S: timer.remainingDuration },
             Action: 'PUT',
         }
     } else {
@@ -70,7 +64,7 @@ async function updateTimer(timer: Timer) {
     }
     if (timer.endTime) {
         command.input.AttributeUpdates!['end_time'] = {
-            Value: { S: timer.endTime! },
+            Value: { S: timer.endTime },
             Action: 'PUT',
         }
     } else {

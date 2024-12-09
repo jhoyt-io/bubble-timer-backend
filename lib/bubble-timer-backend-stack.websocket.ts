@@ -1,7 +1,7 @@
 // import { getTimer, updateTimer, Timer } from "./backend/timers";
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import { getConnectionById, getConnectionsByUserId, updateConnection } from './backend/connections';
-import { stopTimer, updateTimer } from "./backend/timers";
+import { stopTimer, Timer, updateTimer } from "./backend/timers";
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 
 const jwtVerifier = CognitoJwtVerifier.create({
@@ -92,7 +92,14 @@ export async function handler(event: any, context: any) {
 
             // Update timer in ddb
             if (data.type === 'updateTimer') {
-                await updateTimer(data.timer);
+                await updateTimer(new Timer(
+                    data.timer.id,
+                    data.timer.userId,
+                    data.timer.name,
+                    data.timer.totalDuration,
+                    data.timer.remainingDuration,
+                    data.timer.timerEnd,
+                ));
             }
 
             // Stop timer in ddb
