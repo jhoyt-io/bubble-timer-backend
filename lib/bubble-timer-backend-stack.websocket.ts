@@ -123,6 +123,11 @@ export async function handler(event: any, context: any) {
 }
 
 async function sendDataToUser(cognitoUserName: string, sentFrom: any, data: any) {
+    if (!cognitoUserName) {
+        console.log("No cognito user name, skipping");
+        return;
+    }
+
     const connectionsForUser = await getConnectionsByUserId(cognitoUserName);
     if (connectionsForUser) {
         connectionsForUser?.forEach(connection => {
@@ -144,6 +149,10 @@ async function sendDataToUser(cognitoUserName: string, sentFrom: any, data: any)
                             connectionId: undefined,
                         });
                     });
+            } else if (connection.deviceId === sentFrom) {
+                console.log('Sending to self, skipping');
+            } else if (!connection.connectionId) {
+                console.log('Connection has no connection id, skipping');
             }
         });
     }
