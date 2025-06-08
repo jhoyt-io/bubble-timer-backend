@@ -36,12 +36,15 @@ export async function handler(event: any, context: any) {
             console.log("Token not valid!");
         }
     } else {
+        console.log("No token, getting auth info for connection id: ", connectionId);
         const connection = await getConnectionById(connectionId);
 
         cognitoUserName = connection?.userId;
         deviceId = connection?.deviceId;
-    }
 
+        console.log("Cognito user name: ", cognitoUserName);
+        console.log("Device id: ", deviceId);
+    }
 
     if (cognitoUserName) {
         if (event.requestContext.eventType === 'CONNECT') {
@@ -70,15 +73,22 @@ export async function handler(event: any, context: any) {
         } else if (event.requestContext.routeKey === 'sendmessage') {
             const body = JSON.parse(event.body);
             const data = body.data;
+            console.log('Received WebSocket message:', JSON.stringify(data));
 
             // Handle ping messages
             if (data.type === 'ping') {
-                console.log('Received ping, sending pong');
+                console.log('Received ping message from device:', deviceId);
                 const pongData = {
                     type: 'pong',
                     timestamp: data.timestamp
                 };
-                await sendDataToUser(cognitoUserName, deviceId, pongData);
+                console.log('Sending pong response:', JSON.stringify(pongData));
+                try {
+                    await sendDataToUser(cognitoUserName, deviceId, pongData);
+                    console.log('Successfully sent pong response');
+                } catch (error) {
+                    console.error('Failed to send pong response:', error);
+                }
                 return;
             }
 
@@ -149,20 +159,28 @@ async function sendDataToUser(cognitoUserName: string, sentFrom: any, data: any)
         return;
     }
 
+    console.log(`Looking up connections for user: ${cognitoUserName}`);
     const connectionsForUser = await getConnectionsByUserId(cognitoUserName);
+    console.log(`Found ${connectionsForUser?.length || 0} connections for user`);
+    
     if (connectionsForUser) {
         connectionsForUser?.forEach(connection => {
+            console.log(`Processing connection - deviceId: ${connection.deviceId}, connectionId: ${connection.connectionId}`);
             if (connection.deviceId !== sentFrom // Don't send back to self...
                 && connection.connectionId       // Ensure has active connection
             ) {
+                console.log(`Sending message to connection ${connection.connectionId}:`, JSON.stringify(data));
                 const command = new PostToConnectionCommand({
                     Data: JSON.stringify(data),
                     ConnectionId: connection.connectionId,
                 });
 
                 connectionClient.send(command)
+                    .then(() => {
+                        console.log(`Successfully sent message to connection ${connection.connectionId}`);
+                    })
                     .catch(reason => {
-                        console.log('Removing connection, got exception: ', reason);
+                        console.error('Failed to send message, removing connection:', reason);
 
                         updateConnection({
                             userId: cognitoUserName,
