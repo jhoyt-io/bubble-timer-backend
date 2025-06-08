@@ -23,121 +23,157 @@ export async function handler(event: any, context: any) {
     let deviceId;
     let resultBody = "{}";
 
-    if (event.headers) {
-        const cognitoToken = event.headers.Authorization;
-        deviceId = event.headers.DeviceId;
+    try {
+        if (event.headers) {
+            const cognitoToken = event.headers.Authorization;
+            deviceId = event.headers.DeviceId;
 
-        try {
-            const payload = await jwtVerifier.verify(cognitoToken);
-            console.log("Token is valid. Payload: ", payload);
+            try {
+                const payload = await jwtVerifier.verify(cognitoToken);
+                console.log("Token is valid. Payload: ", payload);
 
-            cognitoUserName = payload['cognito:username'];
-        } catch {
-            console.log("Token not valid!");
+                cognitoUserName = payload['cognito:username'];
+            } catch {
+                console.log("Token not valid!");
+            }
+        } else {
+            console.log("No token, getting auth info for connection id: ", connectionId);
+            const connection = await getConnectionById(connectionId);
+
+            cognitoUserName = connection?.userId;
+            deviceId = connection?.deviceId;
+
+            console.log("Cognito user name: ", cognitoUserName);
+            console.log("Device id: ", deviceId);
         }
-    } else {
-        console.log("No token, getting auth info for connection id: ", connectionId);
-        const connection = await getConnectionById(connectionId);
 
-        cognitoUserName = connection?.userId;
-        deviceId = connection?.deviceId;
-
-        console.log("Cognito user name: ", cognitoUserName);
-        console.log("Device id: ", deviceId);
-    }
-
-    if (cognitoUserName) {
-        if (event.requestContext.eventType === 'CONNECT') {
-            try {
-                await updateConnection({
-                    userId: cognitoUserName,
-                    deviceId,
-                    connectionId,
-                });
-                console.log("Updated connection!");
-            } catch(e) {
-                console.log("FAILED to update connection!");
-            }
-        // This may not be reachable, since auth header isn't sent on graceful shutdown
-        } else if (event.requestContext.eventType === 'DISCONNECT') {
-            try {
-                await updateConnection({
-                    userId: cognitoUserName,
-                    deviceId,
-                    connectionId: undefined,
-                });
-                console.log("Updated connection!");
-            } catch(e) {
-                console.log("FAILED to update connection!");
-            }
-        } else if (event.requestContext.routeKey === 'sendmessage') {
-            const body = JSON.parse(event.body);
-            const data = body.data;
-            console.log('Received WebSocket message:', JSON.stringify(data));
-
-            // Handle ping messages
-            if (data.type === 'ping') {
-                console.log('Received ping message from device:', deviceId);
-                const pongData = {
-                    type: 'pong',
-                    timestamp: data.timestamp
-                };
-                console.log('Sending pong response:', JSON.stringify(pongData));
+        if (cognitoUserName) {
+            if (event.requestContext.eventType === 'CONNECT') {
                 try {
-                    await sendDataToUser(cognitoUserName, deviceId, pongData);
-                    console.log('Successfully sent pong response');
-                } catch (error) {
-                    console.error('Failed to send pong response:', error);
+                    await updateConnection({
+                        userId: cognitoUserName,
+                        deviceId,
+                        connectionId,
+                    });
+                    console.log("Updated connection!");
+                } catch(e) {
+                    console.error("FAILED to update connection!", e);
+                    throw e;
                 }
-                return;
-            }
+            } else if (event.requestContext.eventType === 'DISCONNECT') {
+                try {
+                    await updateConnection({
+                        userId: cognitoUserName,
+                        deviceId,
+                        connectionId: undefined,
+                    });
+                    console.log("Updated connection!");
+                } catch(e) {
+                    console.error("FAILED to update connection!", e);
+                    throw e;
+                }
+            } else if (event.requestContext.routeKey === 'sendmessage') {
+                try {
+                    const body = JSON.parse(event.body);
+                    const data = body.data;
+                    console.log('Received WebSocket message:', JSON.stringify(data));
 
-            // Handle acknowledge messages
-            if (data.type === 'acknowledge') {
-                console.log(`Message ${data.messageId} acknowledged`);
-                return;
-            }
+                    // Handle ping messages
+                    if (data.type === 'ping') {
+                        console.log('Received ping message from device:', deviceId);
+                        const pongData = {
+                            type: 'pong',
+                            timestamp: data.timestamp
+                        };
+                        console.log('Sending pong response:', JSON.stringify(pongData));
+                        try {
+                            // Passed device id is skipped so specify empty string to send to all connections for the user
+                            await sendDataToUser(cognitoUserName, '', pongData);
+                            console.log('Successfully sent pong response');
+                        } catch (error) {
+                            console.error('Failed to send pong response:', error);
+                            throw error;
+                        }
+                        return {
+                            "isBase64Encoded": false,
+                            "statusCode": 200,
+                            "headers": { 
+                                "Access-Control-Allow-Headers" :  "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                                "Access-Control-Allow-Origin": "http://localhost:4000",
+                                "Access-Control-Allow-Methods": "OPTIONS,GET,POST,PUT,PATCH,DELETE",
+                                "Content-Type": "application/json",
+                            },
+                            "body": JSON.stringify({ status: "success" })
+                        };
+                    }
 
-            // Add messageId to outgoing messages
-            if (data.type === 'activeTimerList' || data.type === 'updateTimer' || data.type === 'stopTimer') {
-                const messageWithId = {
-                    ...data,
-                    messageId: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-                };
-                console.log('Got ', messageWithId.type, ' sending to all connections for user id ', cognitoUserName);
+                    // Handle acknowledge messages
+                    if (data.type === 'acknowledge') {
+                        console.log(`Message ${data.messageId} acknowledged`);
+                        return;
+                    }
 
-                await sendDataToUser(cognitoUserName, deviceId, messageWithId);
-            }
+                    // Add messageId to outgoing messages
+                    if (data.type === 'activeTimerList' || data.type === 'updateTimer' || data.type === 'stopTimer') {
+                        const messageWithId = {
+                            ...data,
+                            messageId: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+                        };
+                        console.log('Got ', messageWithId.type, ' sending to all connections for user id ', cognitoUserName);
 
-            // Send timer updates to specified users
-            if (data.type === 'updateTimer' || data.type === 'stopTimer') {
-                console.log('Got ', data.type, ' sending to all users shared with', cognitoUserName);
+                        await sendDataToUser(cognitoUserName, deviceId, messageWithId);
+                    }
 
-                Promise.allSettled(
-                    data.shareWith?.map((userName: string) => {
-                        console.log('Sending to: ', userName);
-                        return sendDataToUser(userName, deviceId, data);
-                    })
-                )
-            }
+                    // Send timer updates to specified users
+                    if (data.type === 'updateTimer' || data.type === 'stopTimer') {
+                        console.log('Got ', data.type, ' sending to all users shared with', cognitoUserName);
 
-            // Update timer in ddb
-            if (data.type === 'updateTimer') {
-                await updateTimer(new Timer(
-                    data.timer.id,
-                    data.timer.userId,
-                    data.timer.name,
-                    data.timer.totalDuration,
-                    data.timer.remainingDuration,
-                    data.timer.timerEnd,
-                ));
-            }
+                        Promise.allSettled(
+                            data.shareWith?.map((userName: string) => {
+                                console.log('Sending to: ', userName);
+                                return sendDataToUser(userName, deviceId, data);
+                            })
+                        )
+                    }
 
-            // Stop timer in ddb
-            if (data.type === 'stopTimer') {
-                await stopTimer(data.timerId);
+                    // Update timer in ddb
+                    if (data.type === 'updateTimer') {
+                        await updateTimer(new Timer(
+                            data.timer.id,
+                            data.timer.userId,
+                            data.timer.name,
+                            data.timer.totalDuration,
+                            data.timer.remainingDuration,
+                            data.timer.timerEnd,
+                        ));
+                    }
+
+                    // Stop timer in ddb
+                    if (data.type === 'stopTimer') {
+                        await stopTimer(data.timerId);
+                    }
+                } catch (error) {
+                    console.error('Error processing message:', error);
+                    throw error;
+                }
             }
         }
+    } catch (error) {
+        console.error('Lambda handler error:', error);
+        return {
+            "isBase64Encoded": false,
+            "statusCode": 500,
+            "headers": { 
+                "Access-Control-Allow-Headers" :  "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                "Access-Control-Allow-Origin": "http://localhost:4000",
+                "Access-Control-Allow-Methods": "OPTIONS,GET,POST,PUT,PATCH,DELETE",
+                "Content-Type": "application/json",
+            },
+            "body": JSON.stringify({ 
+                error: "Internal server error",
+                details: error.message
+            })
+        };
     }
 
     return {
@@ -163,36 +199,38 @@ async function sendDataToUser(cognitoUserName: string, sentFrom: any, data: any)
     const connectionsForUser = await getConnectionsByUserId(cognitoUserName);
     console.log(`Found ${connectionsForUser?.length || 0} connections for user`);
     
-    if (connectionsForUser) {
-        connectionsForUser?.forEach(connection => {
-            console.log(`Processing connection - deviceId: ${connection.deviceId}, connectionId: ${connection.connectionId}`);
-            if (connection.deviceId !== sentFrom // Don't send back to self...
-                && connection.connectionId       // Ensure has active connection
-            ) {
-                console.log(`Sending message to connection ${connection.connectionId}:`, JSON.stringify(data));
-                const command = new PostToConnectionCommand({
-                    Data: JSON.stringify(data),
-                    ConnectionId: connection.connectionId,
-                });
-
-                connectionClient.send(command)
-                    .then(() => {
-                        console.log(`Successfully sent message to connection ${connection.connectionId}`);
-                    })
-                    .catch(reason => {
-                        console.error('Failed to send message, removing connection:', reason);
-
-                        updateConnection({
-                            userId: cognitoUserName,
-                            deviceId: connection.deviceId,
-                            connectionId: undefined,
-                        });
-                    });
-            } else if (connection.deviceId === sentFrom) {
-                console.log('Sending to self, skipping');
-            } else if (!connection.connectionId) {
-                console.log('Connection has no connection id, skipping');
-            }
-        });
+    if (!connectionsForUser || connectionsForUser.length === 0) {
+        console.log(`No connections found for user ${cognitoUserName}`);
+        return;
     }
+
+    const sendPromises = connectionsForUser.map(async (connection) => {
+        console.log(`Processing connection - deviceId: ${connection.deviceId}, connectionId: ${connection.connectionId}`);
+        if (connection.deviceId !== sentFrom && connection.connectionId) {
+            console.log(`Sending message to connection ${connection.connectionId}:`, JSON.stringify(data));
+            const command = new PostToConnectionCommand({
+                Data: JSON.stringify(data),
+                ConnectionId: connection.connectionId,
+            });
+
+            try {
+                await connectionClient.send(command);
+                console.log(`Successfully sent message to connection ${connection.connectionId}`);
+            } catch (error) {
+                console.error(`Failed to send message to connection ${connection.connectionId}:`, error);
+                await updateConnection({
+                    userId: cognitoUserName,
+                    deviceId: connection.deviceId,
+                    connectionId: undefined,
+                });
+                throw error;
+            }
+        } else if (connection.deviceId === sentFrom) {
+            console.log('Sending to self, skipping');
+        } else if (!connection.connectionId) {
+            console.log('Connection has no connection id, skipping');
+        }
+    });
+
+    await Promise.all(sendPromises);
 }
