@@ -71,11 +71,32 @@ export async function handler(event: any, context: any) {
             const body = JSON.parse(event.body);
             const data = body.data;
 
-            // Mirror messages to other devices
-            if (data.type === 'activeTimerList' || data.type === 'updateTimer' || data.type === 'stopTimer') {
-                console.log('Got ', data.type, ' sending to all connections for user id ', cognitoUserName);
+            // Handle ping messages
+            if (data.type === 'ping') {
+                console.log('Received ping, sending pong');
+                const pongData = {
+                    type: 'pong',
+                    timestamp: data.timestamp
+                };
+                await sendDataToUser(cognitoUserName, deviceId, pongData);
+                return;
+            }
 
-                await sendDataToUser(cognitoUserName, deviceId, data);
+            // Handle acknowledge messages
+            if (data.type === 'acknowledge') {
+                console.log(`Message ${data.messageId} acknowledged`);
+                return;
+            }
+
+            // Add messageId to outgoing messages
+            if (data.type === 'activeTimerList' || data.type === 'updateTimer' || data.type === 'stopTimer') {
+                const messageWithId = {
+                    ...data,
+                    messageId: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+                };
+                console.log('Got ', messageWithId.type, ' sending to all connections for user id ', cognitoUserName);
+
+                await sendDataToUser(cognitoUserName, deviceId, messageWithId);
             }
 
             // Send timer updates to specified users
