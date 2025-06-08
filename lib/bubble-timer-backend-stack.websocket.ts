@@ -20,7 +20,7 @@ export async function handler(event: any, context: any) {
 
     const connectionId = event.requestContext.connectionId;
     let cognitoUserName;
-    let deviceId;
+    let deviceId = '';
     let resultBody = "{}";
 
     try {
@@ -41,7 +41,7 @@ export async function handler(event: any, context: any) {
             const connection = await getConnectionById(connectionId);
 
             cognitoUserName = connection?.userId;
-            deviceId = connection?.deviceId;
+            deviceId = connection?.deviceId || '';
 
             console.log("Cognito user name: ", cognitoUserName);
             console.log("Device id: ", deviceId);
@@ -171,7 +171,7 @@ export async function handler(event: any, context: any) {
             },
             "body": JSON.stringify({ 
                 error: "Internal server error",
-                details: error.message
+                details: error instanceof Error ? error.message : String(error)
             })
         };
     }
