@@ -5,6 +5,7 @@ jest.mock('../lib/backend/timers', () => ({
   getTimer: jest.fn(),
   updateTimer: jest.fn(),
   getTimersSharedWithUser: jest.fn(),
+  removeSharedTimerRelationship: jest.fn(),
   Timer: jest.fn().mockImplementation((id, userId, name, totalDuration, remainingDuration, endTime) => ({
     id,
     userId,
@@ -15,7 +16,7 @@ jest.mock('../lib/backend/timers', () => ({
   }))
 }));
 
-const { getTimer, updateTimer, getTimersSharedWithUser, Timer } = require('../lib/backend/timers');
+const { getTimer, updateTimer, getTimersSharedWithUser, removeSharedTimerRelationship, Timer } = require('../lib/backend/timers');
 
 describe('API Handler', () => {
   const mockEvent = {
@@ -72,7 +73,7 @@ describe('API Handler', () => {
       const result = await handler(event, {});
 
       expect(result.statusCode).toBe(200);
-      expect(result.body).toBe("{'error':'Who knows?'}");
+      expect(result.body).toBe('{"error":"Timer not found"}');
     });
   });
 
@@ -219,4 +220,53 @@ describe('API Handler', () => {
       });
     });
   });
+
+    it('should handle DELETE request for rejecting shared timer invitation', async () => {
+        (removeSharedTimerRelationship as jest.Mock).mockResolvedValue(true);
+
+        const event = {
+            requestContext: {
+                authorizer: {
+                    claims: {
+                        'cognito:username': 'testuser'
+                    }
+                }
+            },
+            resource: '/timers/shared',
+            httpMethod: 'DELETE',
+            path: '/timers/shared',
+            body: JSON.stringify({
+                timerId: 'timer123'
+            })
+        };
+
+        const result = await handler(event, {});
+
+        expect(result.statusCode).toBe(200);
+        const body = JSON.parse(result.body);
+        expect(body.result).toBe('rejected');
+        expect(removeSharedTimerRelationship).toHaveBeenCalledWith('timer123', 'testuser');
+    });
+
+    it('should handle DELETE request with missing timerId', async () => {
+        const event = {
+            requestContext: {
+                authorizer: {
+                    claims: {
+                        'cognito:username': 'testuser'
+                    }
+                }
+            },
+            resource: '/timers/shared',
+            httpMethod: 'DELETE',
+            path: '/timers/shared',
+            body: JSON.stringify({})
+        };
+
+        const result = await handler(event, {});
+
+        expect(result.statusCode).toBe(200);
+        const body = JSON.parse(result.body);
+        expect(body.error).toBe('Missing timerId in request body');
+    });
 }); 

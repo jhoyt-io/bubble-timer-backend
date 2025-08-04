@@ -1,7 +1,7 @@
-import { 
-  Timer, 
-  getTimer, 
-  updateTimer, 
+import {
+  Timer,
+  getTimer,
+  updateTimer,
   getTimersSharedWithUser,
   addSharedTimerRelationship,
   removeSharedTimerRelationship,
@@ -230,6 +230,24 @@ describe('Timers Module', () => {
 
       await removeSharedTimerRelationship('timer123', 'testuser');
 
+      expect(DeleteItemCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          TableName: 'test-shared-timers-table',
+          Key: {
+            shared_with_user: { S: 'testuser' },
+            timer_id: { S: 'timer123' }
+          }
+        })
+      );
+    });
+
+    it('should handle database errors gracefully', async () => {
+      mockClient.send.mockRejectedValue(new Error('Database error'));
+
+      // The function should not throw, it should just log the error
+      await removeSharedTimerRelationship('timer123', 'testuser');
+      
+      // Verify the function was called
       expect(DeleteItemCommand).toHaveBeenCalledWith(
         expect.objectContaining({
           TableName: 'test-shared-timers-table',

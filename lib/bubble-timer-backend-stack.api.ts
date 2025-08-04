@@ -1,4 +1,4 @@
-import { getTimer, updateTimer, Timer, getTimersSharedWithUser } from "./backend/timers";
+import { getTimer, updateTimer, Timer, getTimersSharedWithUser, removeSharedTimerRelationship } from "./backend/timers";
 
 export async function handler(event: any, context: any) {
     console.log("Event: " + JSON.stringify(event));
@@ -28,7 +28,7 @@ export async function handler(event: any, context: any) {
                     if (timer) {
                         resultBody = JSON.stringify(timer);
                     } else {
-                        resultBody = "{'error':'Who knows?'}"
+                        resultBody = JSON.stringify({ 'error': 'Timer not found' });
                     }
                 } else if (event.httpMethod == 'POST') {
                     console.log('POST Request');
@@ -58,11 +58,26 @@ export async function handler(event: any, context: any) {
                     console.log('GET Shared Timers Request');
                     const sharedTimers = await getTimersSharedWithUser(cognitoUserName);
                     resultBody = JSON.stringify(sharedTimers);
+                } else if (event.httpMethod == 'DELETE') {
+                    console.log('DELETE Shared Timer Request');
+                    const body = JSON.parse(event.body || '{}');
+                    const timerId = body.timerId;
+                    
+                    if (timerId) {
+                        try {
+                            await removeSharedTimerRelationship(timerId, cognitoUserName);
+                            resultBody = JSON.stringify({ 'result': 'rejected' });
+                        } catch (error) {
+                            resultBody = JSON.stringify({ 'error': 'Failed to reject shared timer invitation' });
+                        }
+                    } else {
+                        resultBody = JSON.stringify({ 'error': 'Missing timerId in request body' });
+                    }
                 }
             }
         }
     } catch (e) {
-        resultBody = `{'error': '${e}'}`;
+        resultBody = JSON.stringify({ 'error': String(e) });
     }
 
     console.log("Result Body: " + resultBody);
