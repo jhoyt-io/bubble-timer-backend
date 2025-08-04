@@ -20,58 +20,17 @@ class Timer {
 
 async function updateTimer(timer: Timer) {
     const client = new DynamoDBClient({ region: "us-east-1" });
-    const command = new UpdateItemCommand({
+    const command = new PutItemCommand({
         TableName: process.env.TIMERS_TABLE_NAME,
-        Key: {
-            id: {
-                S: timer.id,
-            },
-        },
-        AttributeUpdates: {
-            user_id: {
-                Value: {
-                    S: timer.userId,
-                },
-                Action: 'PUT',
-            },
-            name: {
-                Value: {
-                    S: timer.name,
-                },
-                Action: 'PUT',
-            },
-        },
+        Item: {
+            id: { S: timer.id },
+            user_id: { S: timer.userId },
+            name: { S: timer.name },
+            total_duration: { S: timer.totalDuration },
+            ...(timer.remainingDuration && { remaining_duration: { S: timer.remainingDuration } }),
+            ...(timer.endTime && { end_time: { S: timer.endTime } })
+        }
     });
-    if (timer.totalDuration) {
-        command.input.AttributeUpdates!['total_duration'] = {
-            Value: { S: timer.totalDuration },
-            Action: 'PUT',
-        }
-    } else {
-        command.input.AttributeUpdates!['total_duration'] = {
-            Action: 'DELETE',
-        }
-    }
-    if (timer.remainingDuration) {
-        command.input.AttributeUpdates!['remaining_duration'] = {
-            Value: { S: timer.remainingDuration },
-            Action: 'PUT',
-        }
-    } else {
-        command.input.AttributeUpdates!['remaining_duration'] = {
-            Action: 'DELETE',
-        }
-    }
-    if (timer.endTime) {
-        command.input.AttributeUpdates!['end_time'] = {
-            Value: { S: timer.endTime },
-            Action: 'PUT',
-        }
-    } else {
-        command.input.AttributeUpdates!['end_time'] = {
-            Action: 'DELETE',
-        }
-    }
 
     try {
         const results = await client.send(command);

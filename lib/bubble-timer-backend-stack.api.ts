@@ -65,6 +65,8 @@ export async function handler(event: any, context: any) {
         resultBody = `{'error': '${e}'}`;
     }
 
+    console.log("Result Body: " + resultBody);
+
     return {
         "isBase64Encoded": false,
         "statusCode": 200,
