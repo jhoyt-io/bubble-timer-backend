@@ -60,8 +60,7 @@ export async function handler(event: any, context: any) {
                     resultBody = JSON.stringify(sharedTimers);
                 } else if (event.httpMethod == 'DELETE') {
                     console.log('DELETE Shared Timer Request');
-                    const body = JSON.parse(event.body || '{}');
-                    const timerId = body.timerId;
+                    const timerId = event.queryStringParameters?.timerId;
                     
                     if (timerId) {
                         try {
@@ -71,7 +70,7 @@ export async function handler(event: any, context: any) {
                             resultBody = JSON.stringify({ 'error': 'Failed to reject shared timer invitation' });
                         }
                     } else {
-                        resultBody = JSON.stringify({ 'error': 'Missing timerId in request body' });
+                        resultBody = JSON.stringify({ 'error': 'Missing timerId query parameter' });
                     }
                 }
             }

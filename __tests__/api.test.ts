@@ -235,9 +235,9 @@ describe('API Handler', () => {
             resource: '/timers/shared',
             httpMethod: 'DELETE',
             path: '/timers/shared',
-            body: JSON.stringify({
+            queryStringParameters: {
                 timerId: 'timer123'
-            })
+            }
         };
 
         const result = await handler(event, {});
@@ -260,13 +260,13 @@ describe('API Handler', () => {
             resource: '/timers/shared',
             httpMethod: 'DELETE',
             path: '/timers/shared',
-            body: JSON.stringify({})
+            queryStringParameters: {}
         };
 
         const result = await handler(event, {});
 
         expect(result.statusCode).toBe(200);
         const body = JSON.parse(result.body);
-        expect(body.error).toBe('Missing timerId in request body');
+        expect(body.error).toBe('Missing timerId query parameter');
     });
 }); 
