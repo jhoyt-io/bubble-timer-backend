@@ -129,16 +129,16 @@ describe('Timers Module', () => {
 
       await updateTimer(timer);
 
-      expect(UpdateItemCommand).toHaveBeenCalledWith(
+      expect(PutItemCommand).toHaveBeenCalledWith(
         expect.objectContaining({
           TableName: 'test-timers-table',
-          Key: { id: { S: 'timer123' } },
-          AttributeUpdates: expect.objectContaining({
-            user_id: { Value: { S: 'user123' }, Action: 'PUT' },
-            name: { Value: { S: 'Updated Timer' }, Action: 'PUT' },
-            total_duration: { Value: { S: '600' }, Action: 'PUT' },
-            remaining_duration: { Value: { S: '300' }, Action: 'PUT' },
-            end_time: { Value: { S: '2024-01-01T12:30:00Z' }, Action: 'PUT' }
+          Item: expect.objectContaining({
+            id: { S: 'timer123' },
+            user_id: { S: 'user123' },
+            name: { S: 'Updated Timer' },
+            total_duration: { S: '600' },
+            remaining_duration: { S: '300' },
+            end_time: { S: '2024-01-01T12:30:00Z' }
           })
         })
       );

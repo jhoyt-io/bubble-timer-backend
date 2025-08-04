@@ -134,51 +134,61 @@ export async function handler(event: any, context: any) {
                         await sendDataToUser(cognitoUserName, deviceId, messageWithId);
                     }
 
-                    // Send timer updates to specified users
+                    // Send timer updates to all users who are currently sharing the timer
                     if (data.type === 'updateTimer' || data.type === 'stopTimer') {
-                        console.log('Got ', data.type, ' sending to all users shared with', cognitoUserName);
+                        const currentSharedUsers = await getSharedTimerRelationships(data.timerId || data.timer?.id);
+                        console.log('Got ', data.type, ' sending to all users currently sharing timer:', currentSharedUsers);
 
                         Promise.allSettled(
-                            data.shareWith?.map((userName: string) => {
+                            currentSharedUsers.map((userName: string) => {
                                 console.log('Sending to: ', userName);
                                 return sendDataToUser(userName, deviceId, data);
                             })
-                        )
-                    }
+                        );
 
-                    // Update timer in ddb
-                    if (data.type === 'updateTimer') {
-                        await updateTimer(new Timer(
-                            data.timer.id,
-                            data.timer.userId,
-                            data.timer.name,
-                            data.timer.totalDuration,
-                            data.timer.remainingDuration,
-                            data.timer.timerEnd
-                        ));
-                        
-                        // Manage shared timer relationships
-                        const currentSharedUsers = await getSharedTimerRelationships(data.timer.id);
-                        const newSharedUsers = data.shareWith || [];
-                        
-                        // Add new relationships
-                        for (const sharedUser of newSharedUsers) {
-                            if (!currentSharedUsers.includes(sharedUser)) {
-                                await addSharedTimerRelationship(data.timer.id, sharedUser);
+                        // Update timer in ddb
+                        if (data.type === 'updateTimer') {
+                            await updateTimer(new Timer(
+                                data.timer.id,
+                                data.timer.userId,
+                                data.timer.name,
+                                data.timer.totalDuration,
+                                data.timer.remainingDuration,
+                                data.timer.timerEnd
+                            ));
+                            
+                            // Manage shared timer relationships
+                            const currentSharedUsers = await getSharedTimerRelationships(data.timer.id);
+                            const newSharedUsers = data.shareWith || [];
+                            
+                            // Add new relationships
+                            for (const sharedUser of newSharedUsers) {
+                                if (!currentSharedUsers.includes(sharedUser)) {
+                                    await addSharedTimerRelationship(data.timer.id, sharedUser);
+                                }
+                            }
+                            
+                            // Remove outdated relationships
+                            for (const currentUser of currentSharedUsers) {
+                                if (!newSharedUsers.includes(currentUser)) {
+                                    await removeSharedTimerRelationship(data.timer.id, currentUser);
+                                }
                             }
                         }
-                        
-                        // Remove outdated relationships
-                        for (const currentUser of currentSharedUsers) {
-                            if (!newSharedUsers.includes(currentUser)) {
-                                await removeSharedTimerRelationship(data.timer.id, currentUser);
-                            }
-                        }
-                    }
 
-                    // Stop timer in ddb
-                    if (data.type === 'stopTimer') {
-                        await stopTimer(data.timerId);
+                        // Stop timer in ddb (after sending messages to all shared users)
+                        if (data.type === 'stopTimer') {
+                            // Get all shared users before deleting the timer
+                            console.log('Stopping timer and removing shared relationships for users:', currentSharedUsers);
+                            
+                            // Remove all shared timer relationships
+                            for (const sharedUser of currentSharedUsers) {
+                                await removeSharedTimerRelationship(data.timerId, sharedUser);
+                            }
+                            
+                            // Delete the timer
+                            await stopTimer(data.timerId);
+                        }
                     }
                 } catch (error) {
                     console.error('Error processing message:', error);
