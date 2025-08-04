@@ -1,7 +1,15 @@
 // import { getTimer, updateTimer, Timer } from "./backend/timers";
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import { getConnectionById, getConnectionsByUserId, updateConnection } from './backend/connections';
-import { stopTimer, Timer, updateTimer } from "./backend/timers";
+import { 
+    stopTimer, 
+    Timer, 
+    updateTimer, 
+    getTimer,
+    addSharedTimerRelationship,
+    removeSharedTimerRelationship,
+    getSharedTimerRelationships
+} from "./backend/timers";
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 
 const jwtVerifier = CognitoJwtVerifier.create({
@@ -113,6 +121,8 @@ export async function handler(event: any, context: any) {
                         return;
                     }
 
+
+
                     // Add messageId to outgoing messages
                     if (data.type === 'activeTimerList' || data.type === 'updateTimer' || data.type === 'stopTimer') {
                         const messageWithId = {
@@ -144,8 +154,26 @@ export async function handler(event: any, context: any) {
                             data.timer.name,
                             data.timer.totalDuration,
                             data.timer.remainingDuration,
-                            data.timer.timerEnd,
+                            data.timer.timerEnd
                         ));
+                        
+                        // Manage shared timer relationships
+                        const currentSharedUsers = await getSharedTimerRelationships(data.timer.id);
+                        const newSharedUsers = data.shareWith || [];
+                        
+                        // Add new relationships
+                        for (const sharedUser of newSharedUsers) {
+                            if (!currentSharedUsers.includes(sharedUser)) {
+                                await addSharedTimerRelationship(data.timer.id, sharedUser);
+                            }
+                        }
+                        
+                        // Remove outdated relationships
+                        for (const currentUser of currentSharedUsers) {
+                            if (!newSharedUsers.includes(currentUser)) {
+                                await removeSharedTimerRelationship(data.timer.id, currentUser);
+                            }
+                        }
                     }
 
                     // Stop timer in ddb

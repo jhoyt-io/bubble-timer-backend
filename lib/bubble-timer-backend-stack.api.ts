@@ -1,4 +1,4 @@
-import { getTimer, updateTimer, Timer } from "./backend/timers";
+import { getTimer, updateTimer, Timer, getTimersSharedWithUser } from "./backend/timers";
 
 export async function handler(event: any, context: any) {
     console.log("Event: " + JSON.stringify(event));
@@ -43,13 +43,21 @@ export async function handler(event: any, context: any) {
                         body.timer.name,
                         body.timer.totalDuration,
                         body.timer.remainingDuration,
-                        body.timer.endTime,
+                        body.timer.endTime
                     ));
                     resultBody = JSON.stringify({
                         'result': {
                             'hello': 'world'
                         }
                     });
+                }
+            } else if (event.resource == '/timers/shared') {
+                console.log('SHARED TIMERS resource');
+                
+                if (event.httpMethod == 'GET') {
+                    console.log('GET Shared Timers Request');
+                    const sharedTimers = await getTimersSharedWithUser(cognitoUserName);
+                    resultBody = JSON.stringify(sharedTimers);
                 }
             }
         }

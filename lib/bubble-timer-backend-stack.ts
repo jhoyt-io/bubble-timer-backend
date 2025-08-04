@@ -56,6 +56,14 @@ export class BackendStack extends Stack {
             authorizationType: AuthorizationType.COGNITO,
         });
 
+        const sharedTimersResource = timersResource.addResource('shared', {
+            defaultCorsPreflightOptions: this.defaultCorsPreflightOptions,
+        });
+        sharedTimersResource.addMethod('ANY', undefined, {
+            authorizer: auth,
+            authorizationType: AuthorizationType.COGNITO,
+        });
+
         const timerResource = timersResource.addResource('{timer}', {
             defaultCorsPreflightOptions: this.defaultCorsPreflightOptions,
         });
@@ -127,6 +135,31 @@ export class BackendStack extends Stack {
         })
         userConnectionsTable.grantFullAccess(webSocketBackendFunction);
         webSocketBackendFunction.addEnvironment('USER_CONNECTIONS_TABLE_NAME', userConnectionsTable.tableName);
+
+        // Shared Timer Relationships Table
+        const sharedTimersTable = new Table(this, 'SharedTimers', {
+            partitionKey: {
+                name: 'shared_with_user', type: AttributeType.STRING
+            },
+            sortKey: {
+                name: 'timer_id', type: AttributeType.STRING
+            },
+            billingMode: BillingMode.PAY_PER_REQUEST,
+        });
+        sharedTimersTable.addGlobalSecondaryIndex({
+            indexName: 'TimerIdIndex',
+            partitionKey: {
+                name: 'timer_id', type: AttributeType.STRING
+            },
+            sortKey: {
+                name: 'shared_with_user', type: AttributeType.STRING
+            },
+        });
+        sharedTimersTable.grantFullAccess(apiBackendFunction);
+        sharedTimersTable.grantFullAccess(webSocketBackendFunction);
+        apiBackendFunction.addEnvironment('SHARED_TIMERS_TABLE_NAME', sharedTimersTable.tableName);
+        webSocketBackendFunction.addEnvironment('SHARED_TIMERS_TABLE_NAME', sharedTimersTable.tableName);
+
 
         // JOIN TABLES
     }

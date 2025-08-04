@@ -1,41 +1,128 @@
-# Welcome to your CDK TypeScript project!
+# Bubble Timer Backend
 
-This is a blank project for TypeScript development with CDK.
+This is the backend infrastructure for the Bubble Timer app, built with AWS CDK and TypeScript.
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+## Features
 
-## Useful commands
+- **REST API**: Timer management endpoints with Cognito authentication
+- **WebSocket API**: Real-time timer updates and sharing
+- **DynamoDB**: Scalable timer storage with efficient querying
+- **Shared Timers**: New feature for discovering and managing shared timers
 
- * `npm run build`   compile typescript to js
- * `npm run watch`   watch for changes and compile
- * `npm run test`    perform the jest unit tests
- * `cdk deploy`      deploy this stack to your default AWS account/region
- * `cdk diff`        compare deployed stack with current state
- * `cdk synth`       emits the synthesized CloudFormation template
+## Development
 
-## Initial Bootstrap
+### Prerequisites
 
-Add profiles via sso, for beta and prod:
-- https://d-9067e380aa.awsapps.com/start/
-- `aws configure sso`
-- `aws sso login --profile <new profile>`
+- Node.js 18+
+- AWS CLI configured
+- AWS CDK installed globally
 
-Bootstrap the new beta account:
-```
-cdk bootstrap --profile <new beta profile>
+### Setup
+
+```bash
+npm install
 ```
 
-Bootstrap the root account to trust / have a support stack for this pipeline:
-```
-cdk bootstrap aws://568614994890/us-east-1 --trust <new beta account>  --profile <new beta profile>
+### Building
+
+```bash
+npm run build
 ```
 
-Bootstrap the new prod account:
-```
-cdk bootstrap aws://<new prod account>/us-east-1 --trust <new beta account> --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess  --profile <new prod profile>
+### Testing
+
+```bash
+# Run tests
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with coverage
+npm run test:coverage
+
+# Build and test
+npm run build:test
 ```
 
-Deploy the pipeline
+### Deployment
+
+```bash
+# Deploy to AWS
+cdk deploy
 ```
-cdk deploy <pipeline stack> --profile <new beta profile>
+
+## API Endpoints
+
+### Timer Management
+- `GET /timers/{timer}` - Get a specific timer
+- `POST /timers/{timer}` - Update a timer
+
+### Shared Timers (New)
+- `GET /timers/shared` - Get all timers shared with the authenticated user
+
+## Database Schema
+
+### Main Timers Table
+- `id` (partition key) - Timer identifier
+- `user_id` - Owner of the timer
+- `name` - Timer name
+- `total_duration` - Total duration in seconds
+- `remaining_duration` - Remaining time when paused
+- `end_time` - Expected end time
+- `shared_with` - Set of usernames the timer is shared with
+
+### Shared Timers Table (New)
+- `shared_with_user` (partition key) - Username receiving the shared timer
+- `timer_id` (sort key) - Timer identifier
+- `created_at` - When the relationship was created
+
+### User Connections Table
+- `user_id` (partition key) - Cognito username
+- `device_id` (sort key) - Device identifier
+- `connection_id` - WebSocket connection ID
+
+## Testing
+
+The project includes comprehensive tests covering:
+
+- **API Endpoints**: All REST API functionality
+- **Database Operations**: Timer CRUD operations and shared timer queries
+- **Error Handling**: Edge cases and error scenarios
+- **Authentication**: Cognito integration
+
+### Test Structure
+
 ```
+__tests__/
+├── api.test.ts      # API endpoint tests
+└── timers.test.ts   # Database operation tests
+```
+
+### Running Tests
+
+```bash
+# All tests
+npm test
+
+# Specific test file
+npm test -- api.test.ts
+
+# With coverage
+npm run test:coverage
+```
+
+## Architecture
+
+- **API Gateway**: REST and WebSocket APIs
+- **Lambda Functions**: Serverless compute for API and WebSocket handlers
+- **DynamoDB**: NoSQL database for timer storage
+- **Cognito**: User authentication and authorization
+- **CDK**: Infrastructure as code
+
+## Performance
+
+- **Efficient Queries**: Uses DynamoDB Query operations instead of Scans
+- **Scalable Design**: Separate tables for different access patterns
+- **Real-time Updates**: WebSocket connections for live timer updates
+- **Cost Optimized**: Pay-per-request DynamoDB billing

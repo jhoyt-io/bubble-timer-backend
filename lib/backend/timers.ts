@@ -1,4 +1,4 @@
-import { AttributeValue, DeleteItemCommand, DynamoDBClient, GetItemCommand, GetItemOutput, QueryCommand, ScanCommand, UpdateItemCommand } from "@aws-sdk/client-dynamodb";
+import { AttributeValue, DeleteItemCommand, DynamoDBClient, GetItemCommand, GetItemOutput, QueryCommand, ScanCommand, UpdateItemCommand, PutItemCommand } from "@aws-sdk/client-dynamodb";
 
 class Timer {
     public id: string;
@@ -73,7 +73,6 @@ async function updateTimer(timer: Timer) {
         }
     }
 
-
     try {
         const results = await client.send(command);
         console.log("DDB Response: " + JSON.stringify(results));
@@ -107,6 +106,98 @@ async function getTimer(timerId: string) {
     }
 }
 
+async function getTimersSharedWithUser(username: string) {
+    const client = new DynamoDBClient({ region: "us-east-1" });
+    
+    // Use the new shared timers table for efficient queries
+    const command = new QueryCommand({
+        TableName: process.env.SHARED_TIMERS_TABLE_NAME,
+        KeyConditionExpression: "shared_with_user = :username",
+        ExpressionAttributeValues: {
+            ":username": { S: username }
+        }
+    });
+    
+    try {
+        const results = await client.send(command);
+        console.log("DDB Shared Timers Response: " + JSON.stringify(results));
+        
+        if (!results.Items || results.Items.length === 0) {
+            return [];
+        }
+        
+        // Get the actual timer data for each shared timer
+        const timerPromises = results.Items.map(async (item) => {
+            const timerId = item.timer_id.S!;
+            return await getTimer(timerId);
+        });
+        
+        const timers = await Promise.all(timerPromises);
+        return timers.filter(timer => timer !== null);
+    } catch(err) {
+        console.error("DDB Error getting shared timers: " + err);
+        return [];
+    }
+}
+
+async function getSharedTimerRelationships(timerId: string) {
+    const client = new DynamoDBClient({ region: "us-east-1" });
+    const command = new QueryCommand({
+        TableName: process.env.SHARED_TIMERS_TABLE_NAME,
+        IndexName: 'TimerIdIndex', // We'll need to add this GSI
+        KeyConditionExpression: "timer_id = :timerId",
+        ExpressionAttributeValues: {
+            ":timerId": { S: timerId }
+        }
+    });
+    
+    try {
+        const results = await client.send(command);
+        console.log("DDB Shared Relationships Response: " + JSON.stringify(results));
+        return results.Items?.map(item => item.shared_with_user.S!) || [];
+    } catch(err) {
+        console.error("DDB Error getting shared relationships: " + err);
+        return [];
+    }
+}
+
+async function addSharedTimerRelationship(timerId: string, sharedWithUser: string) {
+    const client = new DynamoDBClient({ region: "us-east-1" });
+    const command = new PutItemCommand({
+        TableName: process.env.SHARED_TIMERS_TABLE_NAME,
+        Item: {
+            shared_with_user: { S: sharedWithUser },
+            timer_id: { S: timerId },
+            created_at: { S: new Date().toISOString() }
+        }
+    });
+    
+    try {
+        await client.send(command);
+        console.log(`Added shared timer relationship: ${timerId} -> ${sharedWithUser}`);
+    } catch(err) {
+        console.error("DDB Error adding shared timer relationship: " + err);
+    }
+}
+
+async function removeSharedTimerRelationship(timerId: string, sharedWithUser: string) {
+    const client = new DynamoDBClient({ region: "us-east-1" });
+    const command = new DeleteItemCommand({
+        TableName: process.env.SHARED_TIMERS_TABLE_NAME,
+        Key: {
+            shared_with_user: { S: sharedWithUser },
+            timer_id: { S: timerId }
+        }
+    });
+    
+    try {
+        await client.send(command);
+        console.log(`Removed shared timer relationship: ${timerId} -> ${sharedWithUser}`);
+    } catch(err) {
+        console.error("DDB Error removing shared timer relationship: " + err);
+    }
+}
+
 async function stopTimer(timerId: string) {
     const client = new DynamoDBClient({ region: "us-east-1" });
     const command = new DeleteItemCommand({
@@ -135,7 +226,7 @@ function convertItemToTimer(item: { [key: string] : AttributeValue }) {
         item.name.S!,
         item.total_duration.S!,
         item.remaining_duration?.S,
-        item.end_time?.S,
+        item.end_time?.S
     );
 
     return timer;
@@ -145,5 +236,9 @@ export {
     getTimer,
     updateTimer,
     stopTimer,
+    getTimersSharedWithUser,
+    addSharedTimerRelationship,
+    removeSharedTimerRelationship,
+    getSharedTimerRelationships,
     Timer,
 }
