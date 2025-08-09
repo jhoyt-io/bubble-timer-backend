@@ -1,7 +1,5 @@
 import { Construct } from 'constructs';
 import { BuildSpec } from 'aws-cdk-lib/aws-codebuild';
-import { Repository } from 'aws-cdk-lib/aws-codecommit';
-import { Artifact } from 'aws-cdk-lib/aws-codepipeline';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { CodeBuildStep, CodePipeline, CodePipelineSource } from 'aws-cdk-lib/pipelines';
 import { BubbleTimerApplication } from './bubble-timer-application';
@@ -16,12 +14,9 @@ export class BubbleTimerPipelineStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    const cdkRepository = Repository.fromRepositoryArn(
-      this, 
-      'CDKRepository',
-      `arn:aws:codecommit:us-east-1:${BubbleTimerPipelineStack.ROOT_ACCOUNT}:bubble-timer-backend`
-    );
-    const cdkSourceOutput = new Artifact();
+    // GitHub repository configuration
+    // Note: Requires a GitHub Personal Access Token stored in AWS Secrets Manager
+    // Create the secret with: aws secretsmanager create-secret --name github-token --secret-string "your-github-pat"
 
     const pipeline = new CodePipeline(this, 'Pipeline', {
       selfMutation: true,
@@ -41,7 +36,7 @@ export class BubbleTimerPipelineStack extends Stack {
       },
       crossAccountKeys: true,
       synth: new CodeBuildStep('Synth', {
-        input: CodePipelineSource.codeCommit(cdkRepository, 'mainline'),
+        input: CodePipelineSource.gitHub('jhoyt-io/bubble-timer-backend', 'main'),
         partialBuildSpec: BuildSpec.fromObject({
           version: '0.2',
           env: {
