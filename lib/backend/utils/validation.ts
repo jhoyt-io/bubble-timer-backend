@@ -121,12 +121,21 @@ export class ValidationUtils {
             errors.push(new ValidationError('Message ID must be a string if provided', 'messageId', message.messageId));
         }
 
-        // Validate timestamp (optional)
+        // Validate timestamp (optional) - accept both string and number
         if (message.timestamp !== undefined) {
-            if (typeof message.timestamp !== 'string') {
-                errors.push(new ValidationError('Timestamp must be a string if provided', 'timestamp', message.timestamp));
-            } else if (!this.isValidISOString(message.timestamp)) {
-                errors.push(new ValidationError('Timestamp must be a valid ISO string', 'timestamp', message.timestamp));
+            if (typeof message.timestamp === 'number') {
+                // Convert numeric timestamp to ISO string
+                try {
+                    message.timestamp = new Date(message.timestamp).toISOString();
+                } catch (error) {
+                    errors.push(new ValidationError('Timestamp must be a valid timestamp', 'timestamp', message.timestamp));
+                }
+            } else if (typeof message.timestamp === 'string') {
+                if (!this.isValidISOString(message.timestamp)) {
+                    errors.push(new ValidationError('Timestamp must be a valid ISO string', 'timestamp', message.timestamp));
+                }
+            } else {
+                errors.push(new ValidationError('Timestamp must be a string or number if provided', 'timestamp', message.timestamp));
             }
         }
 

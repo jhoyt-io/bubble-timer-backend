@@ -244,8 +244,7 @@ async function handleSendMessage(
     const messageLogger = requestLogger.child('sendMessage', { connectionId, userId, deviceId });
     
     // Validate message
-    const validatedMessage = ValidationMiddleware.validateWebSocketMessage(event.body);
-    const data = validatedMessage.data;
+    const data = ValidationMiddleware.validateWebSocketMessage(event.body);
     
     messageLogger.info('WebSocket message received', { 
         messageType: data.type,
