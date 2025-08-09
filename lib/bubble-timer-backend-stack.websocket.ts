@@ -1,9 +1,9 @@
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import { getConnectionById, getConnectionsByUserId, updateConnection } from './backend/connections';
-import { 
-    stopTimer, 
-    Timer, 
-    updateTimer, 
+import {
+    stopTimer,
+    Timer,
+    updateTimer,
     getTimer,
     addSharedTimerRelationship,
     removeSharedTimerRelationship,
@@ -37,16 +37,16 @@ export const handler = ErrorHandler.wrapHandler(async (event: any, context: any)
     const connectionId = ValidationMiddleware.validateConnectionId(event);
     const eventType = event.requestContext.eventType;
     const routeKey = event.requestContext.routeKey;
-    
-    const requestLogger = logger.child('websocket', { 
-        requestId, 
-        connectionId, 
-        eventType, 
-        routeKey 
+
+    const requestLogger = logger.child('websocket', {
+        requestId,
+        connectionId,
+        eventType,
+        routeKey
     });
-    
+
     const timer = Monitoring.timer('websocket_request_duration');
-    
+
     try {
         requestLogger.info('WebSocket event received', {
             eventType,
@@ -67,9 +67,9 @@ export const handler = ErrorHandler.wrapHandler(async (event: any, context: any)
             return ResponseUtils.websocketSuccess({ error: 'Authentication required' }, 401);
         }
 
-        const userLogger = requestLogger.child('authenticated', { 
-            userId: cognitoUserName, 
-            deviceId 
+        const userLogger = requestLogger.child('authenticated', {
+            userId: cognitoUserName,
+            deviceId
         });
 
         let result: any;
@@ -87,23 +87,23 @@ export const handler = ErrorHandler.wrapHandler(async (event: any, context: any)
         }
 
         const duration = timer.stop();
-        
+
         // Record WebSocket metrics
         await Monitoring.websocketEvent(
-            eventType === 'CONNECT' ? 'connect' : 
-            eventType === 'DISCONNECT' ? 'disconnect' : 'message',
+            eventType === 'CONNECT' ? 'connect' :
+                eventType === 'DISCONNECT' ? 'disconnect' : 'message',
             cognitoUserName,
             duration
         );
-        
+
         userLogger.info('WebSocket request completed successfully', { duration });
-        
+
         return result;
 
     } catch (error) {
         const duration = timer.stop();
         requestLogger.error('WebSocket request failed', error);
-        
+
         // Record error metrics
         await Monitoring.websocketEvent('error', undefined, duration);
         await Monitoring.error(
@@ -135,9 +135,9 @@ async function handleAuthentication(event: any, requestLogger: MonitoringLogger)
             if (cognitoToken) {
                 try {
                     const payload = await jwtVerifier.verify(cognitoToken, { tokenUse: 'id' });
-                    requestLogger.debug('Token verification successful', { 
+                    requestLogger.debug('Token verification successful', {
                         sub: payload.sub,
-                        tokenUse: payload.token_use 
+                        tokenUse: payload.token_use
                     });
                     cognitoUserName = payload['cognito:username'];
                 } catch (authError) {
@@ -148,13 +148,13 @@ async function handleAuthentication(event: any, requestLogger: MonitoringLogger)
             // Authentication via stored connection
             requestLogger.debug('Looking up authentication from stored connection');
             const connection = await getConnectionById(event.requestContext.connectionId);
-            
+
             if (connection) {
                 cognitoUserName = connection.userId;
                 deviceId = connection.deviceId;
-                requestLogger.debug('Authentication retrieved from connection', { 
+                requestLogger.debug('Authentication retrieved from connection', {
                     userId: cognitoUserName,
-                    deviceId 
+                    deviceId
                 });
             }
         }
@@ -175,7 +175,7 @@ async function handleConnect(
     requestLogger: MonitoringLogger
 ): Promise<any> {
     const connectLogger = requestLogger.child('connect', { connectionId, userId, deviceId });
-    
+
     await Monitoring.time('websocket_connect', async () => {
         await updateConnection({
             userId,
@@ -184,10 +184,10 @@ async function handleConnect(
         });
     });
 
-    connectLogger.info('WebSocket connection established', { 
+    connectLogger.info('WebSocket connection established', {
         connectionId,
         userId,
-        deviceId 
+        deviceId
     });
 
     await Monitoring.businessMetric('WebSocketConnections', 1, {
@@ -208,7 +208,7 @@ async function handleDisconnect(
     requestLogger: MonitoringLogger
 ): Promise<any> {
     const disconnectLogger = requestLogger.child('disconnect', { connectionId, userId, deviceId });
-    
+
     await Monitoring.time('websocket_disconnect', async () => {
         await updateConnection({
             userId,
@@ -217,10 +217,10 @@ async function handleDisconnect(
         });
     });
 
-    disconnectLogger.info('WebSocket connection closed', { 
+    disconnectLogger.info('WebSocket connection closed', {
         connectionId,
         userId,
-        deviceId 
+        deviceId
     });
 
     await Monitoring.businessMetric('WebSocketDisconnections', 1, {
@@ -242,14 +242,14 @@ async function handleSendMessage(
     requestLogger: MonitoringLogger
 ): Promise<any> {
     const messageLogger = requestLogger.child('sendMessage', { connectionId, userId, deviceId });
-    
+
     // RAW MESSAGE LOGGING - capture exactly what mobile app sends
     messageLogger.info('Raw WebSocket message received', {
         eventBody: event.body,
         eventBodyType: typeof event.body,
         eventBodyLength: event.body ? event.body.length : 0
     });
-    
+
     // Parse raw body to see structure before validation
     let rawParsedBody;
     try {
@@ -274,14 +274,14 @@ async function handleSendMessage(
             rawBody: event.body
         });
     }
-    
+
     // Validate message
     const data = ValidationMiddleware.validateWebSocketMessage(event.body);
-    
-    // Cast to access raw message data for debugging
-    const rawData = data.data as any;
-    
-    messageLogger.info('WebSocket message received', { 
+
+    // The validated data IS the message data - no need to access .data
+    const rawData = data as any;
+
+    messageLogger.info('WebSocket message received', {
         messageType: data.type,
         hasMessageId: !!data.messageId,
         dataStructure: {
@@ -319,16 +319,16 @@ async function handlePingMessage(
     messageLogger: MonitoringLogger
 ): Promise<any> {
     messageLogger.debug('Processing ping message', { timestamp: data.timestamp });
-    
+
     const pongData = ResponseUtils.pong(data.timestamp);
-    
+
     await Monitoring.time('websocket_ping_response', async () => {
         // Send to all connections except the sender
         await sendDataToUser(userId, deviceId, pongData);
     });
 
     messageLogger.info('Pong response sent', { originalTimestamp: data.timestamp });
-    
+
     return ResponseUtils.websocketSuccess({ status: 'pong_sent' });
 }
 
@@ -349,9 +349,9 @@ async function handleTimerMessage(
     deviceId: string,
     messageLogger: MonitoringLogger
 ): Promise<any> {
-    const timerLogger = messageLogger.child('timerMessage', { 
+    const timerLogger = messageLogger.child('timerMessage', {
         messageType: data.type,
-        timerId: data.timerId || data.timer?.id 
+        timerId: data.timer?.id || data.timerId
     });
 
     // Add messageId to outgoing messages
@@ -371,14 +371,14 @@ async function handleTimerMessage(
         await handleTimerPersistence(data, timerLogger);
     }
 
-    timerLogger.info('Timer message processed successfully', { 
+    timerLogger.info('Timer message processed successfully', {
         messageType: data.type,
-        messageId: messageWithId.messageId 
+        messageId: messageWithId.messageId
     });
 
-    return ResponseUtils.websocketSuccess({ 
+    return ResponseUtils.websocketSuccess({
         status: 'message_processed',
-        messageId: messageWithId.messageId 
+        messageId: messageWithId.messageId
     });
 }
 
@@ -390,24 +390,24 @@ async function handleTimerSharing(data: any, senderDeviceId: string, timerLogger
     if (!timerId) return;
 
     const currentSharedUsers = await getSharedTimerRelationships(timerId);
-    timerLogger.debug('Sending timer update to shared users', { 
+    timerLogger.debug('Sending timer update to shared users', {
         timerId,
-        sharedUsersCount: currentSharedUsers.length 
+        sharedUsersCount: currentSharedUsers.length
     });
 
     // Send to all users sharing the timer
     const sendPromises = currentSharedUsers.map(async (userName: string) => {
         try {
             await sendDataToUser(userName, senderDeviceId, data);
-            timerLogger.debug('Timer update sent to shared user', { 
+            timerLogger.debug('Timer update sent to shared user', {
                 timerId,
-                sharedUser: userName 
+                sharedUser: userName
             });
         } catch (error) {
-            timerLogger.error('Failed to send timer update to shared user', { 
+            timerLogger.error('Failed to send timer update to shared user', {
                 error,
                 timerId,
-                sharedUser: userName 
+                sharedUser: userName
             });
         }
     });
@@ -420,14 +420,15 @@ async function handleTimerSharing(data: any, senderDeviceId: string, timerLogger
  */
 async function handleTimerPersistence(data: any, timerLogger: MonitoringLogger): Promise<void> {
     if (data.type === 'updateTimer') {
-        // Handle both data.timer and direct properties format
-        const timerId = data.timerId || data.timer?.id;
-        const userId = data.userId || data.timer?.userId;
-        const name = data.name || data.timer?.name;
-        const totalDuration = data.totalDuration || data.timer?.totalDuration;
-        const remainingDuration = data.remainingDuration || data.timer?.remainingDuration;
-        const endTime = data.timerEnd || data.timer?.timerEnd;
-        
+        // Handle mobile app format: data.timer.{id, userId, name, totalDuration, timerEnd}
+        // Based on logs, mobile app ALWAYS sends data.timer object
+        const timerId = data.timer?.id || data.timerId;
+        const userId = data.timer?.userId || data.userId;
+        const name = data.timer?.name || data.name;
+        const totalDuration = data.timer?.totalDuration || data.totalDuration;
+        const remainingDuration = data.timer?.remainingDuration || data.remainingDuration;
+        const endTime = data.timer?.timerEnd || data.timerEnd;
+
         // Debug logging to understand interface mismatch
         timerLogger.info('Field mapping analysis', {
             mobileAppFormat: {
@@ -456,9 +457,9 @@ async function handleTimerPersistence(data: any, timerLogger: MonitoringLogger):
                 endTime
             }
         });
-        
+
         if (!timerId) {
-            timerLogger.warn('No timer ID found in update message', { 
+            timerLogger.warn('No timer ID found in update message', {
                 data,
                 mobileAppSentTimer: !!data.timer,
                 timerHasId: data.timer?.id,
@@ -466,7 +467,7 @@ async function handleTimerPersistence(data: any, timerLogger: MonitoringLogger):
             });
             return;
         }
-        
+
         await Monitoring.time('persist_timer_update', async () => {
             const timer = Timer.fromValidatedData({
                 id: timerId,
@@ -476,20 +477,20 @@ async function handleTimerPersistence(data: any, timerLogger: MonitoringLogger):
                 remainingDuration: remainingDuration,
                 endTime: endTime
             });
-            
+
             await updateTimer(timer);
-            
+
             // Manage shared timer relationships
             const currentSharedUsers = await getSharedTimerRelationships(timerId);
             const newSharedUsers = data.shareWith || [];
-            
+
             // Add new relationships
             for (const sharedUser of newSharedUsers) {
                 if (!currentSharedUsers.includes(sharedUser)) {
                     await addSharedTimerRelationship(timerId, sharedUser);
                 }
             }
-            
+
             // Remove outdated relationships
             for (const currentUser of currentSharedUsers) {
                 if (!newSharedUsers.includes(currentUser)) {
@@ -497,37 +498,37 @@ async function handleTimerPersistence(data: any, timerLogger: MonitoringLogger):
                 }
             }
         });
-        
+
         await Monitoring.timerOperation('update', true, 0, userId);
-        timerLogger.info('Timer updated and relationships synchronized', { 
+        timerLogger.info('Timer updated and relationships synchronized', {
             timerId: timerId,
-            newSharedUsers: data.shareWith?.length || 0 
+            newSharedUsers: data.shareWith?.length || 0
         });
-        
+
     } else if (data.type === 'stopTimer') {
         await Monitoring.time('persist_timer_stop', async () => {
-            const stopTimerId = data.timerId || data.timer?.id;
-            const stopUserId = data.userId || data.timer?.userId;
-            
+            const stopTimerId = data.timer?.id || data.timerId;
+            const stopUserId = data.timer?.userId || data.userId;
+
             if (!stopTimerId) {
                 timerLogger.warn('No timer ID found in stop message', { data });
                 return;
             }
-            
+
             const currentSharedUsers = await getSharedTimerRelationships(stopTimerId);
-            
+
             // Remove all shared timer relationships
             for (const sharedUser of currentSharedUsers) {
                 await removeSharedTimerRelationship(stopTimerId, sharedUser);
             }
-            
+
             // Delete the timer
             await stopTimer(stopTimerId);
         });
-        
+
         await Monitoring.timerOperation('stop', true, 0);
-        timerLogger.info('Timer stopped and relationships cleaned up', { 
-            timerId: data.timerId || data.timer?.id 
+        timerLogger.info('Timer stopped and relationships cleaned up', {
+            timerId: data.timer?.id || data.timerId
         });
     }
 }
@@ -536,22 +537,22 @@ async function handleTimerPersistence(data: any, timerLogger: MonitoringLogger):
  * Sends data to all connections for a user
  */
 async function sendDataToUser(cognitoUserName: string, sentFromDeviceId: string, data: any): Promise<void> {
-    const sendLogger = logger.child('sendDataToUser', { 
+    const sendLogger = logger.child('sendDataToUser', {
         targetUser: cognitoUserName,
-        sentFromDevice: sentFromDeviceId 
+        sentFromDevice: sentFromDeviceId
     });
-    
+
     if (!cognitoUserName) {
         sendLogger.debug('No username provided, skipping send');
         return;
     }
 
     const connectionsForUser = await getConnectionsByUserId(cognitoUserName);
-    sendLogger.debug('Retrieved user connections', { 
+    sendLogger.debug('Retrieved user connections', {
         targetUser: cognitoUserName,
-        connectionsCount: connectionsForUser.length 
+        connectionsCount: connectionsForUser.length
     });
-    
+
     if (connectionsForUser.length === 0) {
         sendLogger.info('No active connections found for user', { targetUser: cognitoUserName });
         return;
@@ -566,18 +567,18 @@ async function sendDataToUser(cognitoUserName: string, sentFromDeviceId: string,
                 });
 
                 await connectionClient.send(command);
-                sendLogger.debug('Message sent to connection successfully', { 
+                sendLogger.debug('Message sent to connection successfully', {
                     connectionId: connection.connectionId,
-                    deviceId: connection.deviceId 
+                    deviceId: connection.deviceId
                 });
-                
+
             } catch (error) {
-                sendLogger.error('Failed to send message to connection', { 
+                sendLogger.error('Failed to send message to connection', {
                     error,
                     connectionId: connection.connectionId,
-                    deviceId: connection.deviceId 
+                    deviceId: connection.deviceId
                 });
-                
+
                 // Clean up stale connection
                 await updateConnection({
                     userId: cognitoUserName,
@@ -586,15 +587,15 @@ async function sendDataToUser(cognitoUserName: string, sentFromDeviceId: string,
                 });
             }
         } else {
-            sendLogger.debug('Skipping connection', { 
+            sendLogger.debug('Skipping connection', {
                 deviceId: connection.deviceId,
-                reason: connection.deviceId === sentFromDeviceId ? 'sender' : 'no_connection_id' 
+                reason: connection.deviceId === sentFromDeviceId ? 'sender' : 'no_connection_id'
             });
         }
     });
 
     await Promise.allSettled(sendPromises);
-    
+
     await Monitoring.businessMetric('WebSocketMessagesSent', sendPromises.length, {
         TargetUser: cognitoUserName,
         MessageType: data.type || 'unknown'
