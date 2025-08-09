@@ -161,9 +161,10 @@ export class ValidationUtils {
 
         return {
             type: message.type.trim(),
-            data: message.data,
             messageId: message.messageId,
-            timestamp: message.timestamp
+            timestamp: message.timestamp,
+            // Include all other fields from the original message (timer, shareWith, reason, etc.)
+            ...message
         };
     }
 
