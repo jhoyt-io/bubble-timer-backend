@@ -351,7 +351,7 @@ async function handleTimerMessage(
 ): Promise<any> {
     const timerLogger = messageLogger.child('timerMessage', {
         messageType: data.type,
-        timerId: data.timer?.id || data.timerId
+        timerId: data.type === 'stopTimer' ? data.timerId : (data.timer?.id || data.timerId)
     });
 
     // Add messageId to outgoing messages
@@ -367,6 +367,7 @@ async function handleTimerMessage(
 
     // Handle timer updates and sharing
     if (data.type === 'updateTimer' || data.type === 'stopTimer') {
+        // Send to all users sharing the timer (using original data, not messageWithId)
         await handleTimerSharing(data, deviceId, timerLogger);
         await handleTimerPersistence(data, timerLogger);
     }
@@ -386,7 +387,8 @@ async function handleTimerMessage(
  * Handles timer sharing logic
  */
 async function handleTimerSharing(data: any, senderDeviceId: string, timerLogger: MonitoringLogger): Promise<void> {
-    const timerId = data.timerId || data.timer?.id;
+    // For stopTimer, mobile app sends timerId directly; for updateTimer, it's nested in timer object
+    const timerId = data.type === 'stopTimer' ? data.timerId : (data.timerId || data.timer?.id);
     if (!timerId) return;
 
     const currentSharedUsers = await getSharedTimerRelationships(timerId);
@@ -395,24 +397,17 @@ async function handleTimerSharing(data: any, senderDeviceId: string, timerLogger
         sharedUsersCount: currentSharedUsers.length
     });
 
-    // Send to all users sharing the timer
-    const sendPromises = currentSharedUsers.map(async (userName: string) => {
-        try {
-            await sendDataToUser(userName, senderDeviceId, data);
-            timerLogger.debug('Timer update sent to shared user', {
-                timerId,
-                sharedUser: userName
-            });
-        } catch (error) {
+    // Send to all users sharing the timer (fire-and-forget like original)
+    currentSharedUsers.forEach((userName: string) => {
+        timerLogger.debug('Sending to shared user', { timerId, sharedUser: userName });
+        sendDataToUser(userName, senderDeviceId, data).catch((error) => {
             timerLogger.error('Failed to send timer update to shared user', {
                 error,
                 timerId,
                 sharedUser: userName
             });
-        }
+        });
     });
-
-    await Promise.allSettled(sendPromises);
 }
 
 /**
@@ -507,8 +502,8 @@ async function handleTimerPersistence(data: any, timerLogger: MonitoringLogger):
 
     } else if (data.type === 'stopTimer') {
         await Monitoring.time('persist_timer_stop', async () => {
-            const stopTimerId = data.timer?.id || data.timerId;
-            const stopUserId = data.timer?.userId || data.userId;
+            // For stopTimer, mobile app sends timerId directly (not nested in timer object)
+            const stopTimerId = data.timerId;
 
             if (!stopTimerId) {
                 timerLogger.warn('No timer ID found in stop message', { data });
@@ -528,7 +523,7 @@ async function handleTimerPersistence(data: any, timerLogger: MonitoringLogger):
 
         await Monitoring.timerOperation('stop', true, 0);
         timerLogger.info('Timer stopped and relationships cleaned up', {
-            timerId: data.timer?.id || data.timerId
+            timerId: data.timerId
         });
     }
 }
