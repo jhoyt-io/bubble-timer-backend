@@ -1,0 +1,45 @@
+# Cursor Rules for Bubble Timer Backend
+
+## Deployment Safety Rule
+- NEVER run deployment commands (cdk deploy, npm run deploy, etc.)
+- NEVER execute commands that could modify production infrastructure
+- If infrastructure changes are needed, only suggest them or create the files, but don't deploy
+- Always ask for explicit permission before any deployment-related actions
+
+## General Development Rules
+- Focus on code analysis, debugging, and file modifications
+- Provide clear explanations of issues and solutions
+- Always build and test locally after making changes, and fix any new errors introduced
+- Add tests to cover new functionality, or existing functionality that might be impacted
+- Document changes and reasoning in docs/ for large enough changes
+- Be sure to clean up any unused code introduced with each change
+
+## Architecture Context Rules
+- ALWAYS read `docs/ARCHITECTURE.md` first for system design and data flows
+- Reference `docs/DEVELOPMENT.md` for development workflow and patterns
+- Check `docs/WEBSOCKET.md` for WebSocket implementation details
+- Use the documentation to understand message formats and broadcasting patterns before making changes
+- Key architecture points: Lambda → DynamoDB → WebSocket, JWT authentication, connection management
+
+## WebSocket Interface Preservation
+- **NEVER change WebSocket message formats** without coordinating with frontend changes
+- **`stopTimer` messages**: Send `timerId` directly, not nested in `timer` object
+- **`updateTimer` messages**: Send `timer` object with nested fields
+- **Preserve message structure**: The frontend expects specific field names and nesting patterns
+- **Test WebSocket communication**: Verify that timer updates and stops propagate across users
+- **Monitor WebSocket state**: Check connection health and cleanup for stale connections
+
+## Refactoring Safety
+- **Compare with working implementations**: Check git history before refactoring complex components
+- **Preserve working interfaces**: Don't change APIs or message formats that other components rely on
+- **Incremental changes**: Make small, testable changes rather than large rewrites
+- **Test user flows**: Verify that timer sharing, updates, and WebSocket functionality still work
+- **Monitor for regressions**: Watch for issues with WebSocket communication, database operations, or timer synchronization
+
+## Task Management System
+- Use the `tasks/` directory for tracking major work and implementation plans
+- Create implementation plans in `tasks/active/` when explicitly requested by the user
+- Create summary files in `tasks/done/` for major changes that affect 50%+ of the codebase or fundamental architectural approaches
+- Use `TASK_TEMPLATE.md` as a starting point for new tasks
+- Do NOT create task files for every chat - only for significant work or when explicitly requested
+- When completing major work, create a summary file in `tasks/done/` documenting the changes, decisions, and outcomes

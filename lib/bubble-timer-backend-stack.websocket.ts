@@ -367,8 +367,8 @@ async function handleTimerMessage(
 
     // Handle timer updates and sharing
     if (data.type === 'updateTimer' || data.type === 'stopTimer') {
-        // Send to all users sharing the timer (using original data, not messageWithId)
-        await handleTimerSharing(data, deviceId, timerLogger);
+        // Send to all users sharing the timer (fire-and-forget, using original data, not messageWithId)
+        handleTimerSharing(data, deviceId, timerLogger);
         await handleTimerPersistence(data, timerLogger);
     }
 
@@ -386,27 +386,31 @@ async function handleTimerMessage(
 /**
  * Handles timer sharing logic
  */
-async function handleTimerSharing(data: any, senderDeviceId: string, timerLogger: MonitoringLogger): Promise<void> {
+function handleTimerSharing(data: any, senderDeviceId: string, timerLogger: MonitoringLogger): void {
     // For stopTimer, mobile app sends timerId directly; for updateTimer, it's nested in timer object
     const timerId = data.type === 'stopTimer' ? data.timerId : (data.timerId || data.timer?.id);
     if (!timerId) return;
 
-    const currentSharedUsers = await getSharedTimerRelationships(timerId);
-    timerLogger.debug('Sending timer update to shared users', {
-        timerId,
-        sharedUsersCount: currentSharedUsers.length
-    });
+    // Fire-and-forget: don't await the shared users lookup
+    getSharedTimerRelationships(timerId).then((currentSharedUsers) => {
+        timerLogger.debug('Sending timer update to shared users', {
+            timerId,
+            sharedUsersCount: currentSharedUsers.length
+        });
 
-    // Send to all users sharing the timer (fire-and-forget like original)
-    currentSharedUsers.forEach((userName: string) => {
-        timerLogger.debug('Sending to shared user', { timerId, sharedUser: userName });
-        sendDataToUser(userName, senderDeviceId, data).catch((error) => {
-            timerLogger.error('Failed to send timer update to shared user', {
-                error,
-                timerId,
-                sharedUser: userName
+        // Send to all users sharing the timer (fire-and-forget like original)
+        currentSharedUsers.forEach((userName: string) => {
+            timerLogger.debug('Sending to shared user', { timerId, sharedUser: userName });
+            sendDataToUser(userName, senderDeviceId, data).catch((error) => {
+                timerLogger.error('Failed to send timer update to shared user', {
+                    error,
+                    timerId,
+                    sharedUser: userName
+                });
             });
         });
+    }).catch((error: any) => {
+        timerLogger.error('Failed to get shared timer relationships', { error, timerId });
     });
 }
 
