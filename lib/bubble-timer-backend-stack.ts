@@ -117,10 +117,10 @@ export class BackendStack extends Stack {
         timersTable.grantFullAccess(webSocketBackendFunction);
         
         // Environment variables for the new architecture
+        // Note: AWS_REGION is automatically available, so we don't need to set it
         const environmentVariables = {
             'TIMERS_TABLE_NAME': timersTable.tableName,
             'NODE_ENV': 'production',
-            'AWS_REGION': this.region,
             'LOG_LEVEL': 'info',
             'CORS_ORIGIN': 'http://localhost:4000', // Update this for production
         };
