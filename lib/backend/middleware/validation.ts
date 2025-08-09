@@ -40,9 +40,13 @@ export class ValidationMiddleware {
      * Validates WebSocket message
      */
     static validateWebSocketMessage(body: any) {
-        this.logger.debug('Validating WebSocket message', { body });
+        this.logger.info('VALIDATION: Starting WebSocket message validation', { 
+            bodyType: typeof body,
+            bodyContent: body
+        });
 
         if (!body) {
+            this.logger.error('VALIDATION: Message body is required but was null/undefined');
             throw new ValidationError('Message body is required');
         }
 
@@ -50,16 +54,37 @@ export class ValidationMiddleware {
         if (typeof body === 'string') {
             try {
                 parsedBody = JSON.parse(body);
+                this.logger.info('VALIDATION: Successfully parsed JSON body', {
+                    parsedBodyKeys: Object.keys(parsedBody),
+                    hasData: !!parsedBody.data,
+                    dataKeys: parsedBody.data ? Object.keys(parsedBody.data) : []
+                });
             } catch (error) {
+                this.logger.error('VALIDATION: Failed to parse JSON body', { error, body });
                 throw new ValidationError('Invalid JSON in message body');
             }
         } else {
             parsedBody = body;
+            this.logger.info('VALIDATION: Body was already parsed', {
+                parsedBodyType: typeof parsedBody,
+                parsedBodyKeys: parsedBody && typeof parsedBody === 'object' ? Object.keys(parsedBody) : 'not object'
+            });
         }
 
         if (!parsedBody.data) {
+            this.logger.error('VALIDATION: Data object missing from message body', {
+                parsedBody,
+                hasData: !!parsedBody.data,
+                bodyKeys: Object.keys(parsedBody)
+            });
             throw new ValidationError('Data object is required in message body', 'data');
         }
+
+        this.logger.info('VALIDATION: About to validate data object', {
+            dataType: parsedBody.data.type,
+            dataKeys: Object.keys(parsedBody.data),
+            dataContent: parsedBody.data
+        });
 
         return ValidationUtils.validateWebSocketMessage(parsedBody.data);
     }

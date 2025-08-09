@@ -243,6 +243,38 @@ async function handleSendMessage(
 ): Promise<any> {
     const messageLogger = requestLogger.child('sendMessage', { connectionId, userId, deviceId });
     
+    // RAW MESSAGE LOGGING - capture exactly what mobile app sends
+    messageLogger.info('Raw WebSocket message received', {
+        eventBody: event.body,
+        eventBodyType: typeof event.body,
+        eventBodyLength: event.body ? event.body.length : 0
+    });
+    
+    // Parse raw body to see structure before validation
+    let rawParsedBody;
+    try {
+        if (typeof event.body === 'string') {
+            rawParsedBody = JSON.parse(event.body);
+            messageLogger.info('Parsed raw message structure', {
+                hasData: !!rawParsedBody.data,
+                dataKeys: rawParsedBody.data ? Object.keys(rawParsedBody.data) : [],
+                dataType: rawParsedBody.data ? rawParsedBody.data.type : 'undefined',
+                completeDataStructure: rawParsedBody.data
+            });
+        } else {
+            rawParsedBody = event.body;
+            messageLogger.info('Non-string message body', {
+                bodyType: typeof event.body,
+                body: event.body
+            });
+        }
+    } catch (parseError) {
+        messageLogger.error('Failed to parse raw message body', {
+            error: parseError,
+            rawBody: event.body
+        });
+    }
+    
     // Validate message
     const data = ValidationMiddleware.validateWebSocketMessage(event.body);
     

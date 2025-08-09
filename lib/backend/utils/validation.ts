@@ -109,12 +109,26 @@ export class ValidationUtils {
     static validateWebSocketMessage(message: any): WebSocketMessageSchema {
         const errors: ValidationError[] = [];
 
+        console.log('VALIDATION_UTILS: validateWebSocketMessage called with:', {
+            messageType: typeof message,
+            messageKeys: message && typeof message === 'object' ? Object.keys(message) : 'not object',
+            messageContent: message
+        });
+
         if (!message) {
+            console.log('VALIDATION_UTILS: Message object is null/undefined');
             throw new ValidationError('Message object is required');
         }
 
         // Validate type
+        console.log('VALIDATION_UTILS: Checking message.type:', {
+            hasType: !!message.type,
+            typeValue: message.type,
+            typeType: typeof message.type
+        });
+        
         if (!message.type || typeof message.type !== 'string' || message.type.trim().length === 0) {
+            console.log('VALIDATION_UTILS: Message type validation failed');
             errors.push(new ValidationError('Message type is required and must be a non-empty string', 'type', message.type));
         }
 
