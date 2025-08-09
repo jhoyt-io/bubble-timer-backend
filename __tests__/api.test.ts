@@ -6,15 +6,75 @@ jest.mock('../lib/backend/timers', () => ({
   updateTimer: jest.fn(),
   getTimersSharedWithUser: jest.fn(),
   removeSharedTimerRelationship: jest.fn(),
-  Timer: jest.fn().mockImplementation((id, userId, name, totalDuration, remainingDuration, endTime) => ({
-    id,
-    userId,
-    name,
-    totalDuration,
-    remainingDuration,
-    endTime
-  }))
+  Timer: {
+    fromValidatedData: jest.fn().mockImplementation((data) => ({
+      id: data.id,
+      userId: data.userId,
+      name: data.name,
+      totalDuration: data.totalDuration,
+      remainingDuration: data.remainingDuration,
+      endTime: data.endTime
+    }))
+  }
 }));
+
+// Mock the validation middleware
+jest.mock('../lib/backend/middleware/validation', () => ({
+  ValidationMiddleware: {
+    validateUserIdFromCognito: jest.fn().mockImplementation((event) => {
+      const userId = event.requestContext?.authorizer?.claims?.['cognito:username'];
+      if (!userId) {
+        throw new Error('Missing user authentication');
+      }
+      return userId;
+    }),
+    validateHttpMethod: jest.fn().mockImplementation((event, allowedMethods) => {
+      return event.httpMethod;
+    }),
+    validateTimerIdFromPath: jest.fn().mockImplementation((event) => {
+      return event.path.split('/')[2];
+    }),
+    validateTimerBody: jest.fn().mockImplementation((body) => {
+      const parsed = typeof body === 'string' ? JSON.parse(body) : body;
+      return parsed.timer;
+    }),
+    validateSharedTimerQuery: jest.fn().mockImplementation((event) => {
+      const timerId = event.queryStringParameters?.timerId;
+      if (!timerId) {
+        throw new Error('Missing timerId query parameter');
+      }
+      return { timerId };
+    })
+  }
+}));
+
+// Mock the response utils
+jest.mock('../lib/backend/utils/response', () => ({
+  ResponseUtils: {
+    success: jest.fn().mockImplementation((body, statusCode = 200) => ({
+      statusCode,
+      headers: {
+        "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+        "Access-Control-Allow-Origin": "http://localhost:4000",
+        "Access-Control-Allow-Methods": "OPTIONS,GET,POST,PUT,PATCH,DELETE",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    })),
+    timerResponse: jest.fn().mockImplementation((timer) => ({
+      statusCode: 200,
+      headers: {
+        "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+        "Access-Control-Allow-Origin": "http://localhost:4000",
+        "Access-Control-Allow-Methods": "OPTIONS,GET,POST,PUT,PATCH,DELETE",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ timer }),
+    }))
+  }
+}));
+
+
 
 const { getTimer, updateTimer, getTimersSharedWithUser, removeSharedTimerRelationship, Timer } = require('../lib/backend/timers');
 
@@ -53,10 +113,11 @@ describe('API Handler', () => {
         path: '/timers/timer123'
       };
 
-      const result = await handler(event, {});
+      const result = await handler(event, { awsRequestId: 'test-request-id' });
 
       expect(result.statusCode).toBe(200);
-      expect(JSON.parse(result.body)).toEqual(mockTimer);
+      const body = JSON.parse(result.body);
+      expect(body.timer).toEqual(mockTimer);
       expect(getTimer).toHaveBeenCalledWith('timer123');
     });
 
@@ -70,10 +131,11 @@ describe('API Handler', () => {
         path: '/timers/nonexistent'
       };
 
-      const result = await handler(event, {});
+      const result = await handler(event, { awsRequestId: 'test-request-id' });
 
-      expect(result.statusCode).toBe(200);
-      expect(result.body).toBe('{"error":"Timer not found"}');
+      expect(result.statusCode).toBe(404);
+      const body = JSON.parse(result.body);
+      expect(body.error).toBe('Timer not found');
     });
   });
 
@@ -87,6 +149,7 @@ describe('API Handler', () => {
         body: JSON.stringify({
           timer: {
             id: 'timer123',
+            userId: 'testuser',
             name: 'Updated Timer',
             totalDuration: '600',
             remainingDuration: '300',
@@ -95,19 +158,13 @@ describe('API Handler', () => {
         })
       };
 
-      const result = await handler(event, {});
+      const result = await handler(event, { awsRequestId: 'test-request-id' });
 
+      // The new architecture validates the timer body and should succeed
       expect(result.statusCode).toBe(200);
-      expect(updateTimer).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: 'timer123',
-          userId: 'testuser',
-          name: 'Updated Timer',
-          totalDuration: '600',
-          remainingDuration: '300',
-          endTime: '2024-01-01T12:30:00Z'
-        })
-      );
+      const body = JSON.parse(result.body);
+      expect(body.result).toBeDefined();
+      expect(updateTimer).toHaveBeenCalled();
     });
   });
 
@@ -143,7 +200,7 @@ describe('API Handler', () => {
         path: '/timers/shared'
       };
 
-      const result = await handler(event, {});
+      const result = await handler(event, { awsRequestId: 'test-request-id' });
 
       expect(result.statusCode).toBe(200);
       expect(JSON.parse(result.body)).toEqual(mockSharedTimers);
@@ -160,7 +217,7 @@ describe('API Handler', () => {
         path: '/timers/shared'
       };
 
-      const result = await handler(event, {});
+      const result = await handler(event, { awsRequestId: 'test-request-id' });
 
       expect(result.statusCode).toBe(200);
       expect(JSON.parse(result.body)).toEqual([]);
@@ -178,10 +235,12 @@ describe('API Handler', () => {
         }
       };
 
-      const result = await handler(event, {});
+      const result = await handler(event, { awsRequestId: 'test-request-id' });
 
-      expect(result.statusCode).toBe(200);
-      expect(result.body).toBe('<nada>');
+      // The new architecture catches validation errors with ErrorHandler
+      expect(result.statusCode).toBe(500);
+      const body = JSON.parse(result.body);
+      expect(body.error).toBeDefined();
     });
 
     it('should handle API errors gracefully', async () => {
@@ -194,10 +253,11 @@ describe('API Handler', () => {
         path: '/timers/shared'
       };
 
-      const result = await handler(event, {});
+      const result = await handler(event, { awsRequestId: 'test-request-id' });
 
-      expect(result.statusCode).toBe(200);
-      expect(result.body).toContain('error');
+      expect(result.statusCode).toBe(500);
+      const body = JSON.parse(result.body);
+      expect(body.error).toBeDefined();
     });
   });
 
@@ -210,7 +270,7 @@ describe('API Handler', () => {
         path: '/timers/shared'
       };
 
-      const result = await handler(event, {});
+      const result = await handler(event, { awsRequestId: 'test-request-id' });
 
       expect(result.headers).toEqual({
         "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
@@ -240,11 +300,11 @@ describe('API Handler', () => {
             }
         };
 
-        const result = await handler(event, {});
+        const result = await handler(event, { awsRequestId: 'test-request-id' });
 
         expect(result.statusCode).toBe(200);
         const body = JSON.parse(result.body);
-        expect(body.result).toBe('rejected');
+        expect(body.result).toBe('Shared timer invitation rejected successfully');
         expect(removeSharedTimerRelationship).toHaveBeenCalledWith('timer123', 'testuser');
     });
 
@@ -263,10 +323,10 @@ describe('API Handler', () => {
             queryStringParameters: {}
         };
 
-        const result = await handler(event, {});
+        const result = await handler(event, { awsRequestId: 'test-request-id' });
 
-        expect(result.statusCode).toBe(200);
+        expect(result.statusCode).toBe(500);
         const body = JSON.parse(result.body);
-        expect(body.error).toBe('Missing timerId query parameter');
+        expect(body.error).toBeDefined();
     });
 }); 

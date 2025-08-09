@@ -115,8 +115,20 @@ export class BackendStack extends Stack {
         });
         timersTable.grantFullAccess(apiBackendFunction);
         timersTable.grantFullAccess(webSocketBackendFunction);
-        apiBackendFunction.addEnvironment('TIMERS_TABLE_NAME', timersTable.tableName);
-        webSocketBackendFunction.addEnvironment('TIMERS_TABLE_NAME', timersTable.tableName);
+        
+        // Environment variables for the new architecture
+        const environmentVariables = {
+            'TIMERS_TABLE_NAME': timersTable.tableName,
+            'NODE_ENV': 'production',
+            'AWS_REGION': this.region,
+            'LOG_LEVEL': 'info',
+            'CORS_ORIGIN': 'http://localhost:4000', // Update this for production
+        };
+        
+        Object.entries(environmentVariables).forEach(([key, value]) => {
+            apiBackendFunction.addEnvironment(key, value);
+            webSocketBackendFunction.addEnvironment(key, value);
+        });
 
         const userConnectionsTable = new Table(this, 'UserConnections', {
             partitionKey: {
@@ -134,7 +146,16 @@ export class BackendStack extends Stack {
             },
         })
         userConnectionsTable.grantFullAccess(webSocketBackendFunction);
-        webSocketBackendFunction.addEnvironment('USER_CONNECTIONS_TABLE_NAME', userConnectionsTable.tableName);
+        
+        // Add user connections table to environment
+        const userConnectionEnvVars = {
+            'USER_CONNECTIONS_TABLE_NAME': userConnectionsTable.tableName,
+        };
+        
+        Object.entries(userConnectionEnvVars).forEach(([key, value]) => {
+            apiBackendFunction.addEnvironment(key, value);
+            webSocketBackendFunction.addEnvironment(key, value);
+        });
 
         // Shared Timer Relationships Table
         const sharedTimersTable = new Table(this, 'SharedTimers', {
@@ -157,8 +178,21 @@ export class BackendStack extends Stack {
         });
         sharedTimersTable.grantFullAccess(apiBackendFunction);
         sharedTimersTable.grantFullAccess(webSocketBackendFunction);
-        apiBackendFunction.addEnvironment('SHARED_TIMERS_TABLE_NAME', sharedTimersTable.tableName);
-        webSocketBackendFunction.addEnvironment('SHARED_TIMERS_TABLE_NAME', sharedTimersTable.tableName);
+        
+        // Add shared timers table and additional configuration to environment
+        const sharedTimersEnvVars = {
+            'SHARED_TIMERS_TABLE_NAME': sharedTimersTable.tableName,
+            'COGNITO_USER_POOL_ID': userPool.userPoolId,
+            'COGNITO_CLIENT_ID': '', // Will need to be set based on your Cognito setup
+            'WEBSOCKET_ENDPOINT': webSocketApi.apiEndpoint,
+        };
+        
+        Object.entries(sharedTimersEnvVars).forEach(([key, value]) => {
+            if (value) { // Only add non-empty values
+                apiBackendFunction.addEnvironment(key, value);
+                webSocketBackendFunction.addEnvironment(key, value);
+            }
+        });
 
 
         // JOIN TABLES
