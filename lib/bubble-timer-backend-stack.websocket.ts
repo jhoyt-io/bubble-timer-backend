@@ -246,9 +246,22 @@ async function handleSendMessage(
     // Validate message
     const data = ValidationMiddleware.validateWebSocketMessage(event.body);
     
+    // Cast to access raw message data for debugging
+    const rawData = data.data as any;
+    
     messageLogger.info('WebSocket message received', { 
         messageType: data.type,
-        hasMessageId: !!data.messageId 
+        hasMessageId: !!data.messageId,
+        dataStructure: {
+            hasTimer: !!(rawData && rawData.timer),
+            hasTimerId: !!(rawData && rawData.timerId),
+            hasUserId: !!(rawData && rawData.userId),
+            hasName: !!(rawData && rawData.name),
+            hasTotalDuration: !!(rawData && rawData.totalDuration),
+            hasRemainingDuration: !!(rawData && rawData.remainingDuration),
+            hasTimerEnd: !!(rawData && rawData.timerEnd),
+            hasShareWith: !!(rawData && rawData.shareWith)
+        }
     });
 
     // Handle different message types
@@ -375,59 +388,114 @@ async function handleTimerSharing(data: any, senderDeviceId: string, timerLogger
  */
 async function handleTimerPersistence(data: any, timerLogger: MonitoringLogger): Promise<void> {
     if (data.type === 'updateTimer') {
+        // Handle both data.timer and direct properties format
+        const timerId = data.timerId || data.timer?.id;
+        const userId = data.userId || data.timer?.userId;
+        const name = data.name || data.timer?.name;
+        const totalDuration = data.totalDuration || data.timer?.totalDuration;
+        const remainingDuration = data.remainingDuration || data.timer?.remainingDuration;
+        const endTime = data.timerEnd || data.timer?.timerEnd;
+        
+        // Debug logging to understand interface mismatch
+        timerLogger.info('Field mapping analysis', {
+            mobileAppFormat: {
+                'data.timer?.id': data.timer?.id,
+                'data.timer?.userId': data.timer?.userId,
+                'data.timer?.name': data.timer?.name,
+                'data.timer?.totalDuration': data.timer?.totalDuration,
+                'data.timer?.remainingDuration': data.timer?.remainingDuration,
+                'data.timer?.timerEnd': data.timer?.timerEnd,
+                'data.shareWith': data.shareWith
+            },
+            directFormat: {
+                'data.timerId': data.timerId,
+                'data.userId': data.userId,
+                'data.name': data.name,
+                'data.totalDuration': data.totalDuration,
+                'data.remainingDuration': data.remainingDuration,
+                'data.timerEnd': data.timerEnd
+            },
+            mappedValues: {
+                timerId,
+                userId,
+                name,
+                totalDuration,
+                remainingDuration,
+                endTime
+            }
+        });
+        
+        if (!timerId) {
+            timerLogger.warn('No timer ID found in update message', { 
+                data,
+                mobileAppSentTimer: !!data.timer,
+                timerHasId: data.timer?.id,
+                directTimerId: data.timerId
+            });
+            return;
+        }
+        
         await Monitoring.time('persist_timer_update', async () => {
             const timer = Timer.fromValidatedData({
-                id: data.timer.id,
-                userId: data.timer.userId,
-                name: data.timer.name,
-                totalDuration: data.timer.totalDuration,
-                remainingDuration: data.timer.remainingDuration,
-                endTime: data.timer.timerEnd
+                id: timerId,
+                userId: userId,
+                name: name,
+                totalDuration: totalDuration,
+                remainingDuration: remainingDuration,
+                endTime: endTime
             });
             
             await updateTimer(timer);
             
             // Manage shared timer relationships
-            const currentSharedUsers = await getSharedTimerRelationships(data.timer.id);
+            const currentSharedUsers = await getSharedTimerRelationships(timerId);
             const newSharedUsers = data.shareWith || [];
             
             // Add new relationships
             for (const sharedUser of newSharedUsers) {
                 if (!currentSharedUsers.includes(sharedUser)) {
-                    await addSharedTimerRelationship(data.timer.id, sharedUser);
+                    await addSharedTimerRelationship(timerId, sharedUser);
                 }
             }
             
             // Remove outdated relationships
             for (const currentUser of currentSharedUsers) {
                 if (!newSharedUsers.includes(currentUser)) {
-                    await removeSharedTimerRelationship(data.timer.id, currentUser);
+                    await removeSharedTimerRelationship(timerId, currentUser);
                 }
             }
         });
         
-        await Monitoring.timerOperation('update', true, 0, data.timer.userId);
+        await Monitoring.timerOperation('update', true, 0, userId);
         timerLogger.info('Timer updated and relationships synchronized', { 
-            timerId: data.timer.id,
+            timerId: timerId,
             newSharedUsers: data.shareWith?.length || 0 
         });
         
     } else if (data.type === 'stopTimer') {
         await Monitoring.time('persist_timer_stop', async () => {
-            const currentSharedUsers = await getSharedTimerRelationships(data.timerId);
+            const stopTimerId = data.timerId || data.timer?.id;
+            const stopUserId = data.userId || data.timer?.userId;
+            
+            if (!stopTimerId) {
+                timerLogger.warn('No timer ID found in stop message', { data });
+                return;
+            }
+            
+            const currentSharedUsers = await getSharedTimerRelationships(stopTimerId);
             
             // Remove all shared timer relationships
             for (const sharedUser of currentSharedUsers) {
-                await removeSharedTimerRelationship(data.timerId, sharedUser);
+                await removeSharedTimerRelationship(stopTimerId, sharedUser);
             }
             
             // Delete the timer
-            await stopTimer(data.timerId);
+            await stopTimer(stopTimerId);
         });
         
         await Monitoring.timerOperation('stop', true, 0);
         timerLogger.info('Timer stopped and relationships cleaned up', { 
-            timerId: data.timerId 
+            timerId: data.timerId || data.timer?.id 
         });
     }
 }

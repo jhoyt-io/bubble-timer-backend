@@ -62,11 +62,13 @@ export class ValidationUtils {
             errors.push(new ValidationError('Timer name must be 100 characters or less', 'name', timer.name));
         }
 
-        // Validate totalDuration
-        if (!timer.totalDuration || typeof timer.totalDuration !== 'string') {
-            errors.push(new ValidationError('Total duration is required and must be a string', 'totalDuration', timer.totalDuration));
-        } else if (!this.isValidDuration(timer.totalDuration)) {
-            errors.push(new ValidationError('Total duration must be a valid duration format', 'totalDuration', timer.totalDuration));
+        // Validate totalDuration - make more lenient for mobile app compatibility
+        if (timer.totalDuration !== undefined && timer.totalDuration !== null) {
+            if (typeof timer.totalDuration !== 'string') {
+                errors.push(new ValidationError('Total duration must be a string if provided', 'totalDuration', timer.totalDuration));
+            } else if (!this.isValidDuration(timer.totalDuration)) {
+                errors.push(new ValidationError('Total duration must be a valid duration format', 'totalDuration', timer.totalDuration));
+            }
         }
 
         // Validate remainingDuration (optional)
@@ -240,14 +242,24 @@ export class ValidationUtils {
      * For now, accepts any non-empty string - could be enhanced with specific format validation
      */
     private static isValidDuration(duration: string): boolean {
-        return duration.trim().length > 0;
+        // Accept any non-empty string for now to maintain compatibility with mobile app
+        // Mobile app sends Java Duration.toString() format which varies
+        return !!(duration && duration.trim().length > 0);
     }
 
     /**
      * Checks if a string is a valid ISO date string
      */
     private static isValidISOString(dateString: string): boolean {
+        // Relaxed validation to accept mobile app's LocalDateTime.toString() format
+        if (!dateString || dateString.trim().length === 0) {
+            return false;
+        }
+        
         const date = new Date(dateString);
-        return date instanceof Date && !isNaN(date.getTime()) && date.toISOString() === dateString;
+        const isValidDate = date instanceof Date && !isNaN(date.getTime());
+        
+        // Accept if it's a valid date, even if not strict ISO format
+        return isValidDate;
     }
 }
