@@ -20,6 +20,12 @@ const logger = new MonitoringLogger('WebSocketHandler');
 
 // Initialize JWT verifier with configuration
 const authConfig = Config.ws.auth;
+logger.info('JWT Verifier configuration', {
+    userPoolId: authConfig.cognito.userPoolId,
+    clientId: authConfig.cognito.clientId,
+    region: authConfig.cognito.region
+});
+
 const jwtVerifier = CognitoJwtVerifier.create({
     userPoolId: authConfig.cognito.userPoolId,
     tokenUse: 'id',
@@ -62,28 +68,28 @@ export const handler = ErrorHandler.wrapHandler(async (event: any, context: any)
         cognitoUserName = authResult.cognitoUserName;
         deviceId = authResult.deviceId;
 
-        // For CONNECT events, allow unauthenticated requests to proceed
-        // This is necessary because CONNECT is the initial handshake
+        // For CONNECT events, only process if we have authentication info
+        // This matches the working implementation behavior exactly
         if (eventType === 'CONNECT') {
-            if (!cognitoUserName) {
-                requestLogger.warn('CONNECT without authentication - this may be expected for initial handshake', { connectionId });
-                // For CONNECT without auth, we can't store the connection properly
-                // Return success but the connection won't be registered
+            if (cognitoUserName) {
+                // Store connection if we have authentication info
+                const userLogger = requestLogger.child('authenticated', {
+                    userId: cognitoUserName,
+                    deviceId
+                });
+                
+                const result = await handleConnect(connectionId, cognitoUserName, deviceId, userLogger);
+                
+                const duration = timer.stop();
+                await Monitoring.websocketEvent('connect', cognitoUserName, duration);
+                userLogger.info('WebSocket request completed successfully', { duration });
+                
+                return result;
+            } else {
+                // No authentication info available - in working implementation, this was ignored
+                requestLogger.warn('CONNECT without authentication - ignoring connection attempt', { connectionId });
                 return ResponseUtils.websocketSuccess({ status: 'connected_limited' });
             }
-            
-            const userLogger = requestLogger.child('authenticated', {
-                userId: cognitoUserName,
-                deviceId
-            });
-            
-            const result = await handleConnect(connectionId, cognitoUserName, deviceId, userLogger);
-            
-            const duration = timer.stop();
-            await Monitoring.websocketEvent('connect', cognitoUserName, duration);
-            userLogger.info('WebSocket request completed successfully', { duration });
-            
-            return result;
         }
 
         // For DISCONNECT events, allow unauthenticated requests to proceed
@@ -177,22 +183,59 @@ async function handleAuthentication(event: any, requestLogger: MonitoringLogger)
     let deviceId = '';
 
     try {
+        // DEBUG: Log what we're receiving
+        requestLogger.info('Authentication attempt', {
+            hasHeaders: !!event.headers,
+            headerKeys: event.headers ? Object.keys(event.headers) : [],
+            hasAuthorization: !!(event.headers && event.headers.Authorization),
+            hasDeviceId: !!(event.headers && event.headers.DeviceId),
+            authorizationLength: event.headers?.Authorization?.length || 0,
+            deviceId: event.headers?.DeviceId || 'not-provided'
+        });
+
         if (event.headers) {
-            // Direct authentication with token
-            const cognitoToken = event.headers.Authorization;
+            // Direct authentication with token (matching working implementation)
+            let cognitoToken = event.headers.Authorization;
             deviceId = event.headers.DeviceId || '';
+
+            // Strip "Bearer " prefix if present (mobile app might send it)
+            if (cognitoToken && cognitoToken.startsWith('Bearer ')) {
+                cognitoToken = cognitoToken.substring(7);
+                requestLogger.debug('Stripped Bearer prefix from token');
+            }
+
+            // DEBUG: Log token details
+            if (cognitoToken) {
+                requestLogger.info('Token details', {
+                    tokenLength: cognitoToken.length,
+                    tokenStart: cognitoToken.substring(0, 20) + '...',
+                    tokenEnd: '...' + cognitoToken.substring(cognitoToken.length - 20),
+                    hasBearerPrefix: event.headers.Authorization?.startsWith('Bearer ') || false
+                });
+            }
 
             if (cognitoToken) {
                 try {
-                    const payload = await jwtVerifier.verify(cognitoToken, { tokenUse: 'id' });
-                    requestLogger.debug('Token verification successful', {
+                    const payload = await jwtVerifier.verify(cognitoToken);
+                    requestLogger.info('Token verification successful', {
                         sub: payload.sub,
-                        tokenUse: payload.token_use
+                        tokenUse: payload.token_use,
+                        cognitoUsername: payload['cognito:username']
                     });
                     cognitoUserName = payload['cognito:username'];
                 } catch (authError) {
-                    requestLogger.warn('Token verification failed', { error: authError });
+                    // In working implementation, this just logged and continued
+                    requestLogger.warn('Token verification failed - continuing without authentication', { 
+                        error: authError,
+                        errorMessage: authError instanceof Error ? authError.message : 'Unknown error',
+                        errorName: authError instanceof Error ? authError.name : 'Unknown',
+                        errorStack: authError instanceof Error ? authError.stack : 'No stack trace',
+                        tokenPreview: cognitoToken.substring(0, 50) + '...'
+                    });
+                    // Don't set cognitoUserName to undefined - let it remain undefined
                 }
+            } else {
+                requestLogger.warn('No Authorization token provided in headers');
             }
         } else {
             // Authentication via stored connection
@@ -211,6 +254,11 @@ async function handleAuthentication(event: any, requestLogger: MonitoringLogger)
     } catch (error) {
         requestLogger.error('Authentication lookup failed', error);
     }
+
+    requestLogger.info('Authentication result', {
+        cognitoUserName: cognitoUserName || 'not-authenticated',
+        deviceId: deviceId || 'not-provided'
+    });
 
     return { cognitoUserName, deviceId };
 }
