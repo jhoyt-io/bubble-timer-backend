@@ -1,10 +1,17 @@
 import { getTimer, updateTimer, Timer, getTimersSharedWithUser, removeSharedTimerRelationship } from "./backend/timers";
+import { createApiLogger } from './core/logger';
 
 export async function handler(event: any, context: any) {
-    console.log("Event: " + JSON.stringify(event));
-    console.log("Context: " + JSON.stringify(context));
-
     let resultBody: string = "<nada>";
+
+    // Create logger with API context
+    const logger = createApiLogger();
+    logger.debug('API event received', { 
+        httpMethod: event.httpMethod,
+        resource: event.resource,
+        path: event.path 
+    }, event);
+    logger.debug('API context', { contextType: 'lambda' }, context);
 
     try {
         if (event &&
@@ -12,30 +19,37 @@ export async function handler(event: any, context: any) {
             event.requestContext.authorizer &&
             event.requestContext.authorizer.claims) {
             const cognitoUserName: string = event.requestContext.authorizer.claims['cognito:username'];
-            console.log("Cognito User: " + cognitoUserName);
+            
+            // Create user-specific logger
+            const userLogger = createApiLogger(event.httpMethod, cognitoUserName);
+            userLogger.info('User authenticated', { authMethod: 'cognito' });
 
             const splitPath = event.path.split('/');
 
             if (event.resource == '/timers/{timer}') {
-                console.log('TIMER resource');
+                userLogger.debug('Processing TIMER resource', { timerId: splitPath[2] });
 
                 const timerId = splitPath[2];
 
                 if (event.httpMethod == 'GET') {
-                    console.log('GET Request');
+                    userLogger.info('Processing GET timer request', { timerId });
                     const timer = await getTimer(timerId);
 
                     if (timer) {
                         resultBody = JSON.stringify(timer);
+                        userLogger.debug('Timer retrieved successfully', { timerId });
                     } else {
                         resultBody = JSON.stringify({ 'error': 'Timer not found' });
+                        userLogger.warn('Timer not found', { timerId });
                     }
                 } else if (event.httpMethod == 'POST') {
-                    console.log('POST Request');
+                    userLogger.info('Processing POST timer request', { timerId });
                     const body = JSON.parse(event.body);
 
-                    console.log(`${body}`);
-                    console.log(`Id: ${body.timer.id}, Name: ${body.timer.name}`);
+                    userLogger.debug('Timer update data received', { 
+                        timerId: body.timer.id, 
+                        timerName: body.timer.name 
+                    }, body);
 
                     await updateTimer(new Timer(
                         body.timer.id,
@@ -50,16 +64,20 @@ export async function handler(event: any, context: any) {
                             'hello': 'world'
                         }
                     });
+                    userLogger.info('Timer updated successfully', { timerId: body.timer.id });
                 }
             } else if (event.resource == '/timers/shared') {
-                console.log('SHARED TIMERS resource');
+                userLogger.debug('Processing SHARED TIMERS resource');
                 
                 if (event.httpMethod == 'GET') {
-                    console.log('GET Shared Timers Request');
+                    userLogger.info('Processing GET shared timers request');
                     const sharedTimers = await getTimersSharedWithUser(cognitoUserName);
                     resultBody = JSON.stringify(sharedTimers);
+                    userLogger.debug('Shared timers retrieved', { 
+                        sharedTimerCount: sharedTimers.length 
+                    });
                 } else if (event.httpMethod == 'DELETE') {
-                    console.log('DELETE Shared Timer Request');
+                    userLogger.info('Processing DELETE shared timer request');
                     const body = JSON.parse(event.body || '{}');
                     const timerId = body.timerId;
                     
@@ -67,20 +85,30 @@ export async function handler(event: any, context: any) {
                         try {
                             await removeSharedTimerRelationship(timerId, cognitoUserName);
                             resultBody = JSON.stringify({ 'result': 'rejected' });
+                            userLogger.info('Shared timer relationship removed', { timerId });
                         } catch (error) {
                             resultBody = JSON.stringify({ 'error': 'Failed to reject shared timer invitation' });
+                            userLogger.error('Failed to remove shared timer relationship', { timerId }, error);
                         }
                     } else {
                         resultBody = JSON.stringify({ 'error': 'Missing timerId in request body' });
+                        userLogger.warn('Missing timerId in DELETE shared timer request');
                     }
                 }
             }
         }
     } catch (e) {
+        logger.error('API handler error', { 
+            httpMethod: event.httpMethod,
+            resource: event.resource 
+        }, e);
         resultBody = JSON.stringify({ 'error': String(e) });
     }
 
-    console.log("Result Body: " + resultBody);
+    logger.debug('API response prepared', { 
+        resultBodyLength: resultBody.length,
+        hasError: resultBody.includes('"error"')
+    });
 
     return {
         "isBase64Encoded": false,

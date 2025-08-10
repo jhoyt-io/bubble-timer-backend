@@ -86,3 +86,10 @@
 - Avoid repeating information between test description and expect statements
 - Focus on behavior and outcomes rather than implementation details
 - Make tests readable enough to serve as documentation
+
+## Test Failure Handling
+- If tests are failing at the end of an attempt to satisfy a prompt, call this out clearly
+- Do NOT celebrate completion or suggest continuing when tests are still failing
+- Propose specific options for fixing the failing tests
+- Focus on resolving test failures before proceeding with other work
+- Suggest debugging steps, test isolation, or specific fixes for the failing tests

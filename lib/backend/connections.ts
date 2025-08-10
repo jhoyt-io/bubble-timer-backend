@@ -1,4 +1,5 @@
 import { AttributeValue, DynamoDBClient, GetItemCommand, GetItemOutput, QueryCommand, ScanCommand, UpdateItemCommand } from "@aws-sdk/client-dynamodb";
+import { createDatabaseLogger } from '../core/logger';
 
 class Connection {
     public userId: string;
@@ -14,6 +15,7 @@ class Connection {
 }
 
 async function updateConnection(connection: Connection) {
+    const logger = createDatabaseLogger('updateConnection');
     const client = new DynamoDBClient({ region: "us-east-1" });
     let command;
     if (connection.connectionId) {
@@ -57,13 +59,14 @@ async function updateConnection(connection: Connection) {
 
     try {
         const results = await client.send(command);
-        console.log("DDB Response: " + JSON.stringify(results));
+        logger.info("DDB Response", { userId: connection.userId, deviceId: connection.deviceId }, results);
     } catch(err) {
-        console.error("DDB Error: " + err);
+        logger.error("DDB Error", { userId: connection.userId, deviceId: connection.deviceId }, err);
     }
 }
 
 async function getConnection(userId: string, deviceId: string) {
+    const logger = createDatabaseLogger('getConnection');
     const client = new DynamoDBClient({ region: "us-east-1" });
     const command = new GetItemCommand({
         TableName: process.env.USER_CONNECTIONS_TABLE_NAME,
@@ -78,7 +81,7 @@ async function getConnection(userId: string, deviceId: string) {
     });
     try {
         const results = await client.send(command);
-        console.log("DDB Response: " + JSON.stringify(results));
+        logger.info("DDB Response", { userId, deviceId }, results);
 
         if (results.Item) {
             return convertItemToConnection(results.Item);
@@ -86,12 +89,13 @@ async function getConnection(userId: string, deviceId: string) {
 
         return null;
     } catch(err) {
-        console.error("DDB Error: " + err);
+        logger.error("DDB Error", { userId, deviceId }, err);
         return null;
     }
 }
 
 async function getConnectionById(connectionId: string) {
+    const logger = createDatabaseLogger('getConnectionById');
     const client = new DynamoDBClient({ region: "us-east-1" });
     const command = new QueryCommand({
         TableName: process.env.USER_CONNECTIONS_TABLE_NAME,
@@ -107,7 +111,7 @@ async function getConnectionById(connectionId: string) {
 
     try {
         const results = await client.send(command);
-        console.log("DDB Response: " + JSON.stringify(results));
+        logger.info("DDB Response", { connectionId }, results);
 
         if (results.Items) {
             return convertItemToConnection(results.Items[0]);
@@ -115,12 +119,13 @@ async function getConnectionById(connectionId: string) {
 
         return null;
     } catch(err) {
-        console.error("DDB Error: " + err);
+        logger.error("DDB Error", { connectionId }, err);
         return null;
     }
 }
 
 async function getConnectionsByUserId(userId: string) {
+    const logger = createDatabaseLogger('getConnectionsByUserId');
     const client = new DynamoDBClient({ region: "us-east-1" });
     const command = new QueryCommand({
         TableName: process.env.USER_CONNECTIONS_TABLE_NAME,
@@ -135,7 +140,7 @@ async function getConnectionsByUserId(userId: string) {
 
     try {
         const results = await client.send(command);
-        console.log("DDB Response: " + JSON.stringify(results));
+        logger.info("DDB Response", { userId }, results);
 
         if (results.Items) {
             return results.Items.map(item => {
@@ -145,7 +150,7 @@ async function getConnectionsByUserId(userId: string) {
 
         return null;
     } catch(err) {
-        console.error("DDB Error: " + err);
+        logger.error("DDB Error", { userId }, err);
         return null;
     }
 }

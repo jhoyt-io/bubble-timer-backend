@@ -16,6 +16,8 @@ import {
     updateConnection, 
     Connection 
 } from '../lib/backend/connections';
+import { TestLogger } from '../lib/core/test-logger';
+import { setLogger, LogLevel } from '../lib/core/logger';
 
 // Mock the DynamoDB client
 jest.mock('@aws-sdk/client-dynamodb');
@@ -32,7 +34,12 @@ process.env.SHARED_TIMERS_TABLE_NAME = 'test-shared-timers-table';
 process.env.USER_CONNECTIONS_TABLE_NAME = 'test-user-connections-table';
 
 describe('DynamoDB Integration Tests', () => {
+    let testLogger: TestLogger;
+
     beforeEach(() => {
+        testLogger = new TestLogger();
+        setLogger(testLogger);
+        
         jest.clearAllMocks();
         console.log = jest.fn();
         console.error = jest.fn();
@@ -136,7 +143,7 @@ describe('DynamoDB Integration Tests', () => {
 
                     // Then
                     expect(result).toBeNull();
-                    expect(console.error).toHaveBeenCalledWith('DDB Error: Error: Database connection failed');
+                    expect(testLogger.hasMessageAtLevel(/DDB Error/, LogLevel.ERROR)).toBe(true);
                 });
             });
 
@@ -149,7 +156,7 @@ describe('DynamoDB Integration Tests', () => {
                     await updateTimer(timer);
 
                     // Then
-                    expect(console.error).toHaveBeenCalledWith('DDB Error: Error: Database connection failed');
+                    expect(testLogger.hasMessageAtLevel(/DDB Error/, LogLevel.ERROR)).toBe(true);
                 });
             });
         });

@@ -1,4 +1,5 @@
 import { AttributeValue, DeleteItemCommand, DynamoDBClient, GetItemCommand, GetItemOutput, QueryCommand, ScanCommand, UpdateItemCommand, PutItemCommand } from "@aws-sdk/client-dynamodb";
+import { createDatabaseLogger } from '../core/logger';
 
 class Timer {
     public id: string;
@@ -19,6 +20,7 @@ class Timer {
 }
 
 async function updateTimer(timer: Timer) {
+    const logger = createDatabaseLogger('updateTimer');
     const client = new DynamoDBClient({ region: "us-east-1" });
     const command = new PutItemCommand({
         TableName: process.env.TIMERS_TABLE_NAME,
@@ -34,13 +36,14 @@ async function updateTimer(timer: Timer) {
 
     try {
         const results = await client.send(command);
-        console.log("DDB Response: " + JSON.stringify(results));
+        logger.info("DDB Response", { timerId: timer.id, userId: timer.userId }, results);
     } catch(err) {
-        console.error("DDB Error: " + err);
+        logger.error("DDB Error", { timerId: timer.id, userId: timer.userId }, err);
     }
 }
 
 async function getTimer(timerId: string) {
+    const logger = createDatabaseLogger('getTimer');
     const client = new DynamoDBClient({ region: "us-east-1" });
     const command = new GetItemCommand({
         TableName: process.env.TIMERS_TABLE_NAME,
@@ -52,7 +55,7 @@ async function getTimer(timerId: string) {
     });
     try {
         const results = await client.send(command);
-        console.log("DDB Response: " + JSON.stringify(results));
+        logger.info("DDB Response", { timerId }, results);
 
         if (results.Item) {
             return convertItemToTimer(results.Item);
@@ -60,12 +63,13 @@ async function getTimer(timerId: string) {
 
         return null;
     } catch(err) {
-        console.error("DDB Error: " + err);
+        logger.error("DDB Error", { timerId }, err);
         return null;
     }
 }
 
 async function getTimersSharedWithUser(username: string) {
+    const logger = createDatabaseLogger('getTimersSharedWithUser');
     const client = new DynamoDBClient({ region: "us-east-1" });
     
     // Use the new shared timers table for efficient queries
@@ -79,7 +83,7 @@ async function getTimersSharedWithUser(username: string) {
     
     try {
         const results = await client.send(command);
-        console.log("DDB Shared Timers Response: " + JSON.stringify(results));
+        logger.info("DDB Shared Timers Response", { username }, results);
         
         if (!results.Items || results.Items.length === 0) {
             return [];
@@ -94,12 +98,13 @@ async function getTimersSharedWithUser(username: string) {
         const timers = await Promise.all(timerPromises);
         return timers.filter(timer => timer !== null);
     } catch(err) {
-        console.error("DDB Error getting shared timers: " + err);
+        logger.error("DDB Error getting shared timers", { username }, err);
         return [];
     }
 }
 
 async function getSharedTimerRelationships(timerId: string) {
+    const logger = createDatabaseLogger('getSharedTimerRelationships');
     const client = new DynamoDBClient({ region: "us-east-1" });
     const command = new QueryCommand({
         TableName: process.env.SHARED_TIMERS_TABLE_NAME,
@@ -112,15 +117,16 @@ async function getSharedTimerRelationships(timerId: string) {
     
     try {
         const results = await client.send(command);
-        console.log("DDB Shared Relationships Response: " + JSON.stringify(results));
+        logger.info("DDB Shared Relationships Response", { timerId }, results);
         return results.Items?.map(item => item.shared_with_user.S!) || [];
     } catch(err) {
-        console.error("DDB Error getting shared relationships: " + err);
+        logger.error("DDB Error getting shared relationships", { timerId }, err);
         return [];
     }
 }
 
 async function addSharedTimerRelationship(timerId: string, sharedWithUser: string) {
+    const logger = createDatabaseLogger('addSharedTimerRelationship');
     const client = new DynamoDBClient({ region: "us-east-1" });
     const command = new PutItemCommand({
         TableName: process.env.SHARED_TIMERS_TABLE_NAME,
@@ -133,13 +139,14 @@ async function addSharedTimerRelationship(timerId: string, sharedWithUser: strin
     
     try {
         await client.send(command);
-        console.log(`Added shared timer relationship: ${timerId} -> ${sharedWithUser}`);
+        logger.info(`Added shared timer relationship: ${timerId} -> ${sharedWithUser}`, { timerId, sharedWithUser });
     } catch(err) {
-        console.error("DDB Error adding shared timer relationship: " + err);
+        logger.error("DDB Error adding shared timer relationship", { timerId, sharedWithUser }, err);
     }
 }
 
 async function removeSharedTimerRelationship(timerId: string, sharedWithUser: string) {
+    const logger = createDatabaseLogger('removeSharedTimerRelationship');
     const client = new DynamoDBClient({ region: "us-east-1" });
     const command = new DeleteItemCommand({
         TableName: process.env.SHARED_TIMERS_TABLE_NAME,
@@ -151,13 +158,14 @@ async function removeSharedTimerRelationship(timerId: string, sharedWithUser: st
     
     try {
         await client.send(command);
-        console.log(`Removed shared timer relationship: ${timerId} -> ${sharedWithUser}`);
+        logger.info(`Removed shared timer relationship: ${timerId} -> ${sharedWithUser}`, { timerId, sharedWithUser });
     } catch(err) {
-        console.error("DDB Error removing shared timer relationship: " + err);
+        logger.error("DDB Error removing shared timer relationship", { timerId, sharedWithUser }, err);
     }
 }
 
 async function stopTimer(timerId: string) {
+    const logger = createDatabaseLogger('stopTimer');
     const client = new DynamoDBClient({ region: "us-east-1" });
     const command = new DeleteItemCommand({
         TableName: process.env.TIMERS_TABLE_NAME,
@@ -169,11 +177,11 @@ async function stopTimer(timerId: string) {
     });
     try {
         const results = await client.send(command);
-        console.log("DDB Response: " + JSON.stringify(results));
+        logger.info("DDB Response", { timerId }, results);
 
         return;
     } catch(err) {
-        console.error("DDB Error: " + err);
+        logger.error("DDB Error", { timerId }, err);
         return;
     }
 }

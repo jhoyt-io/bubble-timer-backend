@@ -11,6 +11,7 @@ import {
     getSharedTimerRelationships
 } from "./backend/timers";
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
+import { createWebSocketLogger } from './core/logger';
 
 const jwtVerifier = CognitoJwtVerifier.create({
     userPoolId: 'us-east-1_cjED6eOHp',
@@ -23,13 +24,15 @@ const connectionClient = new ApiGatewayManagementApiClient({
 });
 
 export async function handler(event: any, context: any) {
-    console.log("Event: " + JSON.stringify(event));
-    console.log("Context: " + JSON.stringify(context));
-
     const connectionId = event.requestContext.connectionId;
     let cognitoUserName;
     let deviceId = '';
     let resultBody = "{}";
+
+    // Create logger with connection context
+    const logger = createWebSocketLogger(connectionId);
+    logger.debug('WebSocket event received', { eventType: event.requestContext.eventType }, event);
+    logger.debug('WebSocket context', { contextType: 'lambda' }, context);
 
     try {
         if (event.headers) {
@@ -38,24 +41,26 @@ export async function handler(event: any, context: any) {
 
             try {
                 const payload = await jwtVerifier.verify(cognitoToken);
-                console.log("Token is valid. Payload: ", payload);
+                logger.info('Token validation successful', { tokenType: 'JWT' }, payload);
 
                 cognitoUserName = payload['cognito:username'];
             } catch {
-                console.log("Token not valid!");
+                logger.warn('Token validation failed', { tokenType: 'JWT' });
             }
         } else {
-            console.log("No token, getting auth info for connection id: ", connectionId);
+            logger.debug('No token provided, getting auth info from connection', { connectionId });
             const connection = await getConnectionById(connectionId);
 
             cognitoUserName = connection?.userId;
             deviceId = connection?.deviceId || '';
 
-            console.log("Cognito user name: ", cognitoUserName);
-            console.log("Device id: ", deviceId);
+            logger.debug('Connection auth info retrieved', { cognitoUserName, deviceId });
         }
 
         if (cognitoUserName) {
+            // Update logger with user context
+            const userLogger = createWebSocketLogger(connectionId, cognitoUserName, deviceId);
+            
             if (event.requestContext.eventType === 'CONNECT') {
                 try {
                     await updateConnection({
@@ -63,9 +68,9 @@ export async function handler(event: any, context: any) {
                         deviceId,
                         connectionId,
                     });
-                    console.log("Updated connection!");
+                    userLogger.info('Connection established', { eventType: 'CONNECT' });
                 } catch(e) {
-                    console.error("FAILED to update connection!", e);
+                    userLogger.error('Failed to update connection', { eventType: 'CONNECT' }, e);
                     throw e;
                 }
             } else if (event.requestContext.eventType === 'DISCONNECT') {
@@ -75,31 +80,32 @@ export async function handler(event: any, context: any) {
                         deviceId,
                         connectionId: undefined,
                     });
-                    console.log("Updated connection!");
+                    userLogger.info('Connection disconnected', { eventType: 'DISCONNECT' });
                 } catch(e) {
-                    console.error("FAILED to update connection!", e);
+                    userLogger.error('Failed to update connection', { eventType: 'DISCONNECT' }, e);
                     throw e;
                 }
             } else if (event.requestContext.routeKey === 'sendmessage') {
+                let data: any;
                 try {
                     const body = JSON.parse(event.body);
-                    const data = body.data;
-                    console.log('Received WebSocket message:', JSON.stringify(data));
+                    data = body.data;
+                    userLogger.debug('WebSocket message received', { messageType: data.type }, data);
 
                     // Handle ping messages
                     if (data.type === 'ping') {
-                        console.log('Received ping message from device:', deviceId);
+                        userLogger.debug('Ping message received', { deviceId });
                         const pongData = {
                             type: 'pong',
                             timestamp: data.timestamp
                         };
-                        console.log('Sending pong response:', JSON.stringify(pongData));
+                        userLogger.debug('Sending pong response', { pongData });
                         try {
                             // Passed device id is skipped so specify empty string to send to all connections for the user
                             await sendDataToUser(cognitoUserName, '', pongData);
-                            console.log('Successfully sent pong response');
+                            userLogger.debug('Pong response sent successfully');
                         } catch (error) {
-                            console.error('Failed to send pong response:', error);
+                            userLogger.error('Failed to send pong response', { pongData }, error);
                             throw error;
                         }
                         return {
@@ -117,7 +123,7 @@ export async function handler(event: any, context: any) {
 
                     // Handle acknowledge messages
                     if (data.type === 'acknowledge') {
-                        console.log(`Message ${data.messageId} acknowledged`);
+                        userLogger.debug('Message acknowledged', { messageId: data.messageId });
                         return;
                     }
 
@@ -129,7 +135,10 @@ export async function handler(event: any, context: any) {
                             ...data,
                             messageId: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
                         };
-                        console.log('Got ', messageWithId.type, ' sending to all connections for user id ', cognitoUserName);
+                        userLogger.info('Broadcasting message to user connections', { 
+                            messageType: messageWithId.type, 
+                            messageId: messageWithId.messageId 
+                        });
 
                         await sendDataToUser(cognitoUserName, deviceId, messageWithId);
                     }
@@ -137,11 +146,15 @@ export async function handler(event: any, context: any) {
                     // Send timer updates to all users who are currently sharing the timer
                     if (data.type === 'updateTimer' || data.type === 'stopTimer') {
                         const currentSharedUsers = await getSharedTimerRelationships(data.timerId || data.timer?.id);
-                        console.log('Got ', data.type, ' sending to all users currently sharing timer:', currentSharedUsers);
+                        userLogger.info('Broadcasting timer update to shared users', { 
+                            messageType: data.type, 
+                            timerId: data.timerId || data.timer?.id,
+                            sharedUserCount: currentSharedUsers.length 
+                        });
 
                         Promise.allSettled(
                             currentSharedUsers.map((userName: string) => {
-                                console.log('Sending to: ', userName);
+                                userLogger.debug('Sending timer update to shared user', { userName });
                                 return sendDataToUser(userName, deviceId, data);
                             })
                         );
@@ -179,7 +192,10 @@ export async function handler(event: any, context: any) {
                         // Stop timer in ddb (after sending messages to all shared users)
                         if (data.type === 'stopTimer') {
                             // Get all shared users before deleting the timer
-                            console.log('Stopping timer and removing shared relationships for users:', currentSharedUsers);
+                            userLogger.info('Stopping timer and removing shared relationships', { 
+                                timerId: data.timerId,
+                                sharedUserCount: currentSharedUsers.length 
+                            });
                             
                             // Remove all shared timer relationships
                             for (const sharedUser of currentSharedUsers) {
@@ -191,13 +207,13 @@ export async function handler(event: any, context: any) {
                         }
                     }
                 } catch (error) {
-                    console.error('Error processing message:', error);
+                    userLogger.error('Error processing message', { messageType: data?.type }, error);
                     throw error;
                 }
             }
         }
     } catch (error) {
-        console.error('Lambda handler error:', error);
+        logger.error('Lambda handler error', { connectionId }, error);
         return {
             "isBase64Encoded": false,
             "statusCode": 500,
@@ -229,23 +245,37 @@ export async function handler(event: any, context: any) {
 
 async function sendDataToUser(cognitoUserName: string, sentFrom: any, data: any) {
     if (!cognitoUserName) {
-        console.log("No cognito user name, skipping");
+        // Use a basic logger since we don't have connection context
+        const { log } = require('./core/logger');
+        log.warn('No cognito user name provided for sendDataToUser', { sentFrom });
         return;
     }
 
-    console.log(`Looking up connections for user: ${cognitoUserName}`);
+    const logger = createWebSocketLogger(undefined, cognitoUserName, sentFrom);
+    logger.debug('Looking up connections for user', { cognitoUserName });
     const connectionsForUser = await getConnectionsByUserId(cognitoUserName);
-    console.log(`Found ${connectionsForUser?.length || 0} connections for user`);
+    logger.debug('Found connections for user', { 
+        cognitoUserName, 
+        connectionCount: connectionsForUser?.length || 0 
+    });
     
     if (!connectionsForUser || connectionsForUser.length === 0) {
-        console.log(`No connections found for user ${cognitoUserName}`);
+        logger.warn('No connections found for user', { cognitoUserName });
         return;
     }
 
     const sendPromises = connectionsForUser.map(async (connection) => {
-        console.log(`Processing connection - deviceId: ${connection.deviceId}, connectionId: ${connection.connectionId}`);
+        logger.debug('Processing connection', { 
+            deviceId: connection.deviceId, 
+            connectionId: connection.connectionId 
+        });
+        
         if (connection.deviceId !== sentFrom && connection.connectionId) {
-            console.log(`Sending message to connection ${connection.connectionId}:`, JSON.stringify(data));
+            logger.debug('Sending message to connection', { 
+                connectionId: connection.connectionId,
+                messageType: data?.type 
+            }, data);
+            
             const command = new PostToConnectionCommand({
                 Data: JSON.stringify(data),
                 ConnectionId: connection.connectionId,
@@ -253,9 +283,13 @@ async function sendDataToUser(cognitoUserName: string, sentFrom: any, data: any)
 
             try {
                 await connectionClient.send(command);
-                console.log(`Successfully sent message to connection ${connection.connectionId}`);
+                logger.debug('Successfully sent message to connection', { connectionId: connection.connectionId });
             } catch (error) {
-                console.error(`Failed to send message to connection ${connection.connectionId}:`, error);
+                logger.error('Failed to send message to connection', { 
+                    connectionId: connection.connectionId,
+                    deviceId: connection.deviceId 
+                }, error);
+                
                 await updateConnection({
                     userId: cognitoUserName,
                     deviceId: connection.deviceId,
@@ -264,9 +298,9 @@ async function sendDataToUser(cognitoUserName: string, sentFrom: any, data: any)
                 throw error;
             }
         } else if (connection.deviceId === sentFrom) {
-            console.log('Sending to self, skipping');
+            logger.debug('Skipping self-send', { deviceId: connection.deviceId });
         } else if (!connection.connectionId) {
-            console.log('Connection has no connection id, skipping');
+            logger.debug('Skipping connection without connection ID', { deviceId: connection.deviceId });
         }
     });
 
