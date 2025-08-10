@@ -425,17 +425,31 @@ async function handlePingMessage(
     deviceId: string,
     messageLogger: MonitoringLogger
 ): Promise<any> {
-    messageLogger.debug('Processing ping message', { timestamp: data.timestamp });
+    messageLogger.debug('Processing ping message', { 
+        timestamp: data.timestamp,
+        isDirect: data.direct || false,
+        senderDevice: deviceId
+    });
 
     const pongData = ResponseUtils.pong(data.timestamp);
 
     await Monitoring.time('websocket_ping_response', async () => {
-        // Pong should go back to the device that sent the ping
-        // Use empty string to send to ALL connections (including sender)
-        await sendDataToUser(userId, '', pongData);
+        // Check if this is a direct ping (client expects targeted response)
+        if (data.direct) {
+            // Send pong only to the device that sent the ping
+            await sendDataToDevice(userId, deviceId, pongData);
+            messageLogger.info('Direct pong response sent to sender device', { 
+                originalTimestamp: data.timestamp,
+                targetDevice: deviceId
+            });
+        } else {
+            // Legacy behavior: send to all connections (including sender)
+            await sendDataToUser(userId, '', pongData);
+            messageLogger.info('Broadcast pong response sent to all connections', { 
+                originalTimestamp: data.timestamp
+            });
+        }
     });
-
-    messageLogger.info('Pong response sent', { originalTimestamp: data.timestamp });
 
     return ResponseUtils.websocketSuccess({ status: 'pong_sent' });
 }
@@ -468,9 +482,9 @@ async function handleTimerMessage(
         messageId: data.messageId || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     };
 
-    // Send to all connections for the user
+    // Send to all other connections for the user (excluding sender)
     await Monitoring.time('send_to_user_connections', async () => {
-        await sendDataToUser(userId, deviceId, messageWithId);
+        await sendDataToUserExceptSender(userId, deviceId, messageWithId);
     });
 
     // Handle timer updates and sharing
@@ -524,7 +538,7 @@ function handleTimerSharing(data: any, senderDeviceId: string, timerLogger: Moni
 
     // Send to all users sharing the timer - fire-and-forget like original
     sharedUsers.forEach((userName: string) => {
-        sendDataToUser(userName, senderDeviceId, data).catch((error) => {
+        sendDataToUserExceptSender(userName, senderDeviceId, data).catch((error) => {
             timerLogger.error('Failed to send timer update to shared user', {
                 error,
                 timerId,
@@ -754,6 +768,208 @@ async function sendDataToUser(cognitoUserName: string, sentFromDeviceId: string,
     await Promise.allSettled(sendPromises);
 
     await Monitoring.businessMetric('WebSocketMessagesSent', sendPromises.length, {
+        TargetUser: cognitoUserName,
+        MessageType: data.type || 'unknown'
+    });
+}
+
+/**
+ * Sends a message to a specific device only
+ */
+async function sendDataToDevice(cognitoUserName: string, targetDeviceId: string, data: any): Promise<void> {
+    const sendLogger = logger.child('sendDataToDevice', {
+        targetUser: cognitoUserName,
+        targetDevice: targetDeviceId
+    });
+
+    if (!cognitoUserName || !targetDeviceId) {
+        sendLogger.debug('Missing username or deviceId, skipping send');
+        return;
+    }
+
+    const connectionsForUser = await getConnectionsByUserId(cognitoUserName);
+    sendLogger.debug('Retrieved user connections for targeted send', {
+        targetUser: cognitoUserName,
+        targetDevice: targetDeviceId,
+        connectionsCount: connectionsForUser.length
+    });
+
+    if (connectionsForUser.length === 0) {
+        sendLogger.info('No active connections found for user', { targetUser: cognitoUserName });
+        return;
+    }
+
+    // Find connections for the specific device
+    const targetConnections = connectionsForUser.filter(connection => 
+        connection.deviceId === targetDeviceId && connection.connectionId
+    );
+
+    if (targetConnections.length === 0) {
+        sendLogger.info('No active connections found for target device', { 
+            targetUser: cognitoUserName,
+            targetDevice: targetDeviceId 
+        });
+        return;
+    }
+
+    const sendPromises = targetConnections.map(async (connection) => {
+        try {
+            const command = new PostToConnectionCommand({
+                Data: JSON.stringify(data),
+                ConnectionId: connection.connectionId,
+            });
+
+            await connectionClient.send(command);
+            sendLogger.debug('Targeted message sent to connection successfully', {
+                connectionId: connection.connectionId,
+                deviceId: connection.deviceId
+            });
+
+        } catch (error) {
+            const errorCode = error && typeof error === 'object' && 'code' in error ? (error as any).code : 'unknown';
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            
+            sendLogger.error('Failed to send targeted message to connection', {
+                error: {
+                    code: errorCode,
+                    message: errorMessage,
+                    fullError: error
+                },
+                connectionId: connection.connectionId,
+                deviceId: connection.deviceId,
+                targetUser: cognitoUserName,
+                messageType: data.type || 'unknown'
+            });
+
+            // Only clean up connection if it's a specific error that indicates the connection is truly stale
+            const shouldCleanup = isConnectionStaleError(error);
+            
+            if (shouldCleanup) {
+                sendLogger.info('Cleaning up stale connection due to targeted send failure', {
+                    connectionId: connection.connectionId,
+                    deviceId: connection.deviceId,
+                    errorCode
+                });
+                
+                await updateConnection({
+                    userId: cognitoUserName,
+                    deviceId: connection.deviceId,
+                    connectionId: undefined,
+                });
+            } else {
+                sendLogger.debug('Not cleaning up connection - error may be temporary', {
+                    connectionId: connection.connectionId,
+                    deviceId: connection.deviceId,
+                    errorCode
+                });
+            }
+        }
+    });
+
+    // Use Promise.allSettled to handle individual connection failures gracefully
+    await Promise.allSettled(sendPromises);
+
+    await Monitoring.businessMetric('WebSocketTargetedMessagesSent', sendPromises.length, {
+        TargetUser: cognitoUserName,
+        TargetDevice: targetDeviceId,
+        MessageType: data.type || 'unknown'
+    });
+}
+
+/**
+ * Sends a message to all connections for a user except the sender
+ */
+async function sendDataToUserExceptSender(cognitoUserName: string, senderDeviceId: string, data: any): Promise<void> {
+    const sendLogger = logger.child('sendDataToUserExceptSender', {
+        targetUser: cognitoUserName,
+        senderDevice: senderDeviceId
+    });
+
+    if (!cognitoUserName) {
+        sendLogger.debug('No username provided, skipping send');
+        return;
+    }
+
+    const connectionsForUser = await getConnectionsByUserId(cognitoUserName);
+    sendLogger.debug('Retrieved user connections for broadcast', {
+        targetUser: cognitoUserName,
+        senderDevice: senderDeviceId,
+        connectionsCount: connectionsForUser.length
+    });
+
+    if (connectionsForUser.length === 0) {
+        sendLogger.info('No active connections found for user', { targetUser: cognitoUserName });
+        return;
+    }
+
+    const sendPromises = connectionsForUser.map(async (connection) => {
+        // Skip the sender's connections
+        if (connection.deviceId === senderDeviceId || !connection.connectionId) {
+            sendLogger.debug('Skipping connection (sender or no connectionId)', {
+                deviceId: connection.deviceId,
+                senderDeviceId,
+                hasConnectionId: !!connection.connectionId
+            });
+            return;
+        }
+
+        try {
+            const command = new PostToConnectionCommand({
+                Data: JSON.stringify(data),
+                ConnectionId: connection.connectionId,
+            });
+
+            await connectionClient.send(command);
+            sendLogger.debug('Broadcast message sent to connection successfully', {
+                connectionId: connection.connectionId,
+                deviceId: connection.deviceId
+            });
+
+        } catch (error) {
+            const errorCode = error && typeof error === 'object' && 'code' in error ? (error as any).code : 'unknown';
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            
+            sendLogger.error('Failed to send broadcast message to connection', {
+                error: {
+                    code: errorCode,
+                    message: errorMessage,
+                    fullError: error
+                },
+                connectionId: connection.connectionId,
+                deviceId: connection.deviceId,
+                targetUser: cognitoUserName,
+                messageType: data.type || 'unknown'
+            });
+
+            // Only clean up connection if it's a specific error that indicates the connection is truly stale
+            const shouldCleanup = isConnectionStaleError(error);
+            
+            if (shouldCleanup) {
+                sendLogger.info('Cleaning up stale connection due to broadcast send failure', {
+                    connectionId: connection.connectionId,
+                    deviceId: connection.deviceId,
+                    errorCode
+                });
+                
+                await updateConnection({
+                    userId: cognitoUserName,
+                    deviceId: connection.deviceId,
+                    connectionId: undefined,
+                });
+            } else {
+                sendLogger.debug('Not cleaning up connection - error may be temporary', {
+                    connectionId: connection.connectionId,
+                    deviceId: connection.deviceId,
+                    errorCode
+                });
+            }
+        }
+    });
+
+    // Use Promise.allSettled to handle individual connection failures gracefully
+    await Promise.allSettled(sendPromises);
+
+    await Monitoring.businessMetric('WebSocketBroadcastMessagesSent', sendPromises.length, {
         TargetUser: cognitoUserName,
         MessageType: data.type || 'unknown'
     });
