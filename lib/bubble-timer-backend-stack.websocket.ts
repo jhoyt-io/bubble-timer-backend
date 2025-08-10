@@ -602,16 +602,19 @@ async function sendDataToUser(cognitoUserName: string, sentFromDeviceId: string,
                     deviceId: connection.deviceId,
                     connectionId: undefined,
                 });
+                
+                // Match original: throw error to fail the entire operation
+                throw error;
             }
-        } else {
-            sendLogger.debug('Skipping connection', {
-                deviceId: connection.deviceId,
-                reason: connection.deviceId === sentFromDeviceId ? 'sender' : 'no_connection_id'
-            });
+        } else if (connection.deviceId === sentFromDeviceId) {
+            sendLogger.debug('Sending to self, skipping');
+        } else if (!connection.connectionId) {
+            sendLogger.debug('Connection has no connection id, skipping');
         }
     });
 
-    await Promise.allSettled(sendPromises);
+    // Match original: use Promise.all to fail fast on any error
+    await Promise.all(sendPromises);
 
     await Monitoring.businessMetric('WebSocketMessagesSent', sendPromises.length, {
         TargetUser: cognitoUserName,
