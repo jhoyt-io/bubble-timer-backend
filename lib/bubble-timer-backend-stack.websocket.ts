@@ -323,8 +323,9 @@ async function handlePingMessage(
     const pongData = ResponseUtils.pong(data.timestamp);
 
     await Monitoring.time('websocket_ping_response', async () => {
-        // Send to all connections except the sender
-        await sendDataToUser(userId, deviceId, pongData);
+        // Pong should go back to the device that sent the ping
+        // Use empty string to send to ALL connections (including sender)
+        await sendDataToUser(userId, '', pongData);
     });
 
     messageLogger.info('Pong response sent', { originalTimestamp: data.timestamp });
@@ -399,21 +400,23 @@ async function handleTimerSharing(data: any, senderDeviceId: string, timerLogger
     const timerId = data.timerId || data.timer?.id;
     if (!timerId) return;
 
-    const currentSharedUsers = await getSharedTimerRelationships(timerId);
+    // Use shareWith data from the timer directly instead of querying database
+    const sharedUsers = data.shareWith || [];
+    
     timerLogger.info('Sending timer update to shared users', {
         timerId,
         messageType: data.type,
-        sharedUsersCount: currentSharedUsers.length,
-        sharedUsers: currentSharedUsers
+        sharedUsersCount: sharedUsers.length,
+        sharedUsers: sharedUsers
     });
 
-    if (currentSharedUsers.length === 0) {
+    if (sharedUsers.length === 0) {
         timerLogger.info('No shared users found for timer', { timerId });
         return;
     }
 
     // Send to all users sharing the timer
-    const sendPromises = currentSharedUsers.map(async (userName: string) => {
+    const sendPromises = sharedUsers.map(async (userName: string) => {
         try {
             await sendDataToUser(userName, senderDeviceId, data);
             timerLogger.debug('Timer update sent to shared user', {
@@ -576,7 +579,11 @@ async function sendDataToUser(cognitoUserName: string, sentFromDeviceId: string,
     }
 
     const sendPromises = connectionsForUser.map(async (connection) => {
-        if (connection.deviceId !== sentFromDeviceId && connection.connectionId) {
+        // When sentFromDeviceId is empty string, send to ALL connections (including sender)
+        // When sentFromDeviceId is provided, skip the sender
+        const shouldSend = sentFromDeviceId === '' || (connection.deviceId !== sentFromDeviceId && connection.connectionId);
+        
+        if (shouldSend && connection.connectionId) {
             try {
                 const command = new PostToConnectionCommand({
                     Data: JSON.stringify(data),
@@ -606,7 +613,7 @@ async function sendDataToUser(cognitoUserName: string, sentFromDeviceId: string,
                 // Match original: throw error to fail the entire operation
                 throw error;
             }
-        } else if (connection.deviceId === sentFromDeviceId) {
+        } else if (connection.deviceId === sentFromDeviceId && sentFromDeviceId !== '') {
             sendLogger.debug('Sending to self, skipping');
         } else if (!connection.connectionId) {
             sendLogger.debug('Connection has no connection id, skipping');
