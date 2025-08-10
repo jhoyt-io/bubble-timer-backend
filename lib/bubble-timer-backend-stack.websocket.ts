@@ -62,6 +62,65 @@ export const handler = ErrorHandler.wrapHandler(async (event: any, context: any)
         cognitoUserName = authResult.cognitoUserName;
         deviceId = authResult.deviceId;
 
+        // For CONNECT events, allow unauthenticated requests to proceed
+        // This is necessary because CONNECT is the initial handshake
+        if (eventType === 'CONNECT') {
+            if (!cognitoUserName) {
+                requestLogger.warn('CONNECT without authentication - this may be expected for initial handshake', { connectionId });
+                // For CONNECT without auth, we can't store the connection properly
+                // Return success but the connection won't be registered
+                return ResponseUtils.websocketSuccess({ status: 'connected_limited' });
+            }
+            
+            const userLogger = requestLogger.child('authenticated', {
+                userId: cognitoUserName,
+                deviceId
+            });
+            
+            const result = await handleConnect(connectionId, cognitoUserName, deviceId, userLogger);
+            
+            const duration = timer.stop();
+            await Monitoring.websocketEvent('connect', cognitoUserName, duration);
+            userLogger.info('WebSocket request completed successfully', { duration });
+            
+            return result;
+        }
+
+        // For DISCONNECT events, allow unauthenticated requests to proceed
+        // DISCONNECT events typically don't have headers, so we look up the connection
+        if (eventType === 'DISCONNECT') {
+            if (!cognitoUserName) {
+                requestLogger.warn('DISCONNECT without authentication - looking up connection by ID', { connectionId });
+                // Try to get user info from the connection itself
+                const connection = await getConnectionById(connectionId);
+                if (connection) {
+                    cognitoUserName = connection.userId;
+                    deviceId = connection.deviceId;
+                    requestLogger.info('Retrieved user info from connection for DISCONNECT', {
+                        userId: cognitoUserName,
+                        deviceId
+                    });
+                } else {
+                    requestLogger.warn('No connection found for DISCONNECT', { connectionId });
+                    return ResponseUtils.websocketSuccess({ status: 'disconnected' });
+                }
+            }
+            
+            const userLogger = requestLogger.child('authenticated', {
+                userId: cognitoUserName,
+                deviceId
+            });
+            
+            const result = await handleDisconnect(connectionId, cognitoUserName, deviceId, userLogger);
+            
+            const duration = timer.stop();
+            await Monitoring.websocketEvent('disconnect', cognitoUserName, duration);
+            userLogger.info('WebSocket request completed successfully', { duration });
+            
+            return result;
+        }
+
+        // For all other events, require authentication
         if (!cognitoUserName) {
             requestLogger.warn('Unauthenticated WebSocket request', { connectionId });
             return ResponseUtils.websocketSuccess({ error: 'Authentication required' }, 401);
@@ -74,12 +133,8 @@ export const handler = ErrorHandler.wrapHandler(async (event: any, context: any)
 
         let result: any;
 
-        // Route handling
-        if (eventType === 'CONNECT') {
-            result = await handleConnect(connectionId, cognitoUserName, deviceId, userLogger);
-        } else if (eventType === 'DISCONNECT') {
-            result = await handleDisconnect(connectionId, cognitoUserName, deviceId, userLogger);
-        } else if (routeKey === 'sendmessage') {
+        // Route handling for authenticated requests
+        if (routeKey === 'sendmessage') {
             result = await handleSendMessage(event, connectionId, cognitoUserName, deviceId, userLogger);
         } else {
             userLogger.warn('Unknown WebSocket route', { routeKey, eventType });
@@ -88,13 +143,8 @@ export const handler = ErrorHandler.wrapHandler(async (event: any, context: any)
 
         const duration = timer.stop();
 
-        // Record WebSocket metrics
-        await Monitoring.websocketEvent(
-            eventType === 'CONNECT' ? 'connect' :
-                eventType === 'DISCONNECT' ? 'disconnect' : 'message',
-            cognitoUserName,
-            duration
-        );
+        // Record WebSocket metrics (CONNECT and DISCONNECT are handled separately above)
+        await Monitoring.websocketEvent('message', cognitoUserName, duration);
 
         userLogger.info('WebSocket request completed successfully', { duration });
 
@@ -601,8 +651,9 @@ async function sendDataToUser(cognitoUserName: string, sentFromDeviceId: string,
                     connectionId: undefined,
                 });
                 
-                // Match original: throw error to fail the entire operation
-                throw error;
+                // Don't throw error - just log it and continue
+                // This prevents the entire WebSocket request from failing
+                // when individual connections are stale
             }
         } else {
             sendLogger.debug('Skipping connection', {
@@ -613,8 +664,8 @@ async function sendDataToUser(cognitoUserName: string, sentFromDeviceId: string,
         }
     });
 
-    // Match original: use Promise.all to fail fast on any error
-    await Promise.all(sendPromises);
+    // Use Promise.allSettled to handle individual connection failures gracefully
+    await Promise.allSettled(sendPromises);
 
     await Monitoring.businessMetric('WebSocketMessagesSent', sendPromises.length, {
         TargetUser: cognitoUserName,
