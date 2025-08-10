@@ -695,18 +695,47 @@ async function sendDataToUser(cognitoUserName: string, sentFromDeviceId: string,
                 });
 
             } catch (error) {
+                const errorCode = error && typeof error === 'object' && 'code' in error ? (error as any).code : 'unknown';
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                
                 sendLogger.error('Failed to send message to connection', {
-                    error,
+                    error: {
+                        code: errorCode,
+                        message: errorMessage,
+                        fullError: error
+                    },
                     connectionId: connection.connectionId,
-                    deviceId: connection.deviceId
+                    deviceId: connection.deviceId,
+                    targetUser: cognitoUserName,
+                    messageType: data.type || 'unknown'
                 });
 
-                // Clean up stale connection
-                await updateConnection({
-                    userId: cognitoUserName,
-                    deviceId: connection.deviceId,
-                    connectionId: undefined,
-                });
+                // Only clean up connection if it's a specific error that indicates the connection is truly stale
+                // ECONNREFUSED and similar network errors should not trigger immediate cleanup
+                // as they could be temporary network issues
+                const shouldCleanup = isConnectionStaleError(error);
+                
+                if (shouldCleanup) {
+                    const errorCode = error && typeof error === 'object' && 'code' in error ? (error as any).code : 'unknown';
+                    sendLogger.info('Cleaning up stale connection due to send failure', {
+                        connectionId: connection.connectionId,
+                        deviceId: connection.deviceId,
+                        errorCode
+                    });
+                    
+                    await updateConnection({
+                        userId: cognitoUserName,
+                        deviceId: connection.deviceId,
+                        connectionId: undefined,
+                    });
+                } else {
+                    const errorCode = error && typeof error === 'object' && 'code' in error ? (error as any).code : 'unknown';
+                    sendLogger.debug('Not cleaning up connection - error may be temporary', {
+                        connectionId: connection.connectionId,
+                        deviceId: connection.deviceId,
+                        errorCode
+                    });
+                }
                 
                 // Don't throw error - just log it and continue
                 // This prevents the entire WebSocket request from failing
@@ -728,4 +757,46 @@ async function sendDataToUser(cognitoUserName: string, sentFromDeviceId: string,
         TargetUser: cognitoUserName,
         MessageType: data.type || 'unknown'
     });
+}
+
+/**
+ * Determines if a WebSocket send error indicates the connection is truly stale
+ * and should be cleaned up from the database
+ */
+function isConnectionStaleError(error: unknown): boolean {
+    // Type guard to check if error has a code property
+    if (error && typeof error === 'object' && 'code' in error) {
+        const errorCode = (error as any).code;
+        
+        // These error codes indicate the connection is truly stale/dead
+        const staleErrorCodes = [
+            'GoneException',           // Connection no longer exists
+            'LimitExceededException',  // Connection limit exceeded
+            'ForbiddenException'       // Connection forbidden/expired
+        ];
+        
+        // Network errors like ECONNREFUSED, ETIMEDOUT, etc. are NOT considered stale
+        // as they could be temporary network issues
+        const networkErrorCodes = [
+            'ECONNREFUSED',
+            'ETIMEDOUT', 
+            'ENOTFOUND',
+            'ECONNRESET',
+            'ENETUNREACH'
+        ];
+        
+        if (staleErrorCodes.includes(errorCode)) {
+            return true;
+        }
+        
+        if (networkErrorCodes.includes(errorCode)) {
+            return false;
+        }
+        
+        // For unknown error codes, be conservative and don't clean up
+        return false;
+    }
+    
+    // If we can't determine the error type, be conservative and don't clean up
+    return false;
 }
