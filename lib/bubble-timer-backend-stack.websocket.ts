@@ -352,7 +352,7 @@ async function handleTimerMessage(
 ): Promise<any> {
     const timerLogger = messageLogger.child('timerMessage', {
         messageType: data.type,
-        timerId: data.timer?.id || data.timerId
+        timerId: data.type === 'stopTimer' ? data.timerId : (data.timer?.id || data.timerId)
     });
 
     // Add messageId to outgoing messages
@@ -370,15 +370,15 @@ async function handleTimerMessage(
     if (data.type === 'updateTimer' || data.type === 'stopTimer') {
         timerLogger.info('Processing timer message for sharing and persistence', {
             messageType: data.type,
-            timerId: data.timer?.id || data.timerId
+            timerId: data.type === 'stopTimer' ? data.timerId : (data.timer?.id || data.timerId)
         });
         
-        await handleTimerSharing(data, deviceId, timerLogger);
+        handleTimerSharing(data, deviceId, timerLogger);
         await handleTimerPersistence(data, timerLogger);
         
         timerLogger.info('Completed timer message processing', {
             messageType: data.type,
-            timerId: data.timer?.id || data.timerId
+            timerId: data.type === 'stopTimer' ? data.timerId : (data.timer?.id || data.timerId)
         });
     }
 
@@ -396,8 +396,8 @@ async function handleTimerMessage(
 /**
  * Handles timer sharing logic
  */
-async function handleTimerSharing(data: any, senderDeviceId: string, timerLogger: MonitoringLogger): Promise<void> {
-    const timerId = data.timerId || data.timer?.id;
+function handleTimerSharing(data: any, senderDeviceId: string, timerLogger: MonitoringLogger): void {
+    const timerId = data.type === 'stopTimer' ? data.timerId : (data.timerId || data.timer?.id);
     if (!timerId) return;
 
     // Use shareWith data from the timer directly instead of querying database
@@ -415,24 +415,16 @@ async function handleTimerSharing(data: any, senderDeviceId: string, timerLogger
         return;
     }
 
-    // Send to all users sharing the timer
-    const sendPromises = sharedUsers.map(async (userName: string) => {
-        try {
-            await sendDataToUser(userName, senderDeviceId, data);
-            timerLogger.debug('Timer update sent to shared user', {
-                timerId,
-                sharedUser: userName
-            });
-        } catch (error) {
+    // Send to all users sharing the timer - fire-and-forget like original
+    sharedUsers.forEach((userName: string) => {
+        sendDataToUser(userName, senderDeviceId, data).catch((error) => {
             timerLogger.error('Failed to send timer update to shared user', {
                 error,
                 timerId,
                 sharedUser: userName
             });
-        }
+        });
     });
-
-    await Promise.allSettled(sendPromises);
 }
 
 /**
@@ -527,7 +519,7 @@ async function handleTimerPersistence(data: any, timerLogger: MonitoringLogger):
 
     } else if (data.type === 'stopTimer') {
         await Monitoring.time('persist_timer_stop', async () => {
-            const stopTimerId = data.timer?.id || data.timerId;
+            const stopTimerId = data.timerId;
             const stopUserId = data.timer?.userId || data.userId;
 
             if (!stopTimerId) {
@@ -548,7 +540,7 @@ async function handleTimerPersistence(data: any, timerLogger: MonitoringLogger):
 
         await Monitoring.timerOperation('stop', true, 0);
         timerLogger.info('Timer stopped and relationships cleaned up', {
-            timerId: data.timer?.id || data.timerId
+            timerId: data.timerId
         });
     }
 }
@@ -579,11 +571,10 @@ async function sendDataToUser(cognitoUserName: string, sentFromDeviceId: string,
     }
 
     const sendPromises = connectionsForUser.map(async (connection) => {
-        // When sentFromDeviceId is empty string, send to ALL connections (including sender)
-        // When sentFromDeviceId is provided, skip the sender
-        const shouldSend = sentFromDeviceId === '' || (connection.deviceId !== sentFromDeviceId && connection.connectionId);
-        
-        if (shouldSend && connection.connectionId) {
+        // Match original logic: 
+        // - If sentFromDeviceId is empty string, send to ALL connections (including sender)
+        // - If sentFromDeviceId is provided, skip the sender
+        if ((sentFromDeviceId === '' || connection.deviceId !== sentFromDeviceId) && connection.connectionId) {
             try {
                 const command = new PostToConnectionCommand({
                     Data: JSON.stringify(data),
@@ -613,10 +604,12 @@ async function sendDataToUser(cognitoUserName: string, sentFromDeviceId: string,
                 // Match original: throw error to fail the entire operation
                 throw error;
             }
-        } else if (connection.deviceId === sentFromDeviceId && sentFromDeviceId !== '') {
-            sendLogger.debug('Sending to self, skipping');
-        } else if (!connection.connectionId) {
-            sendLogger.debug('Connection has no connection id, skipping');
+        } else {
+            sendLogger.debug('Skipping connection', {
+                deviceId: connection.deviceId,
+                sentFromDeviceId,
+                hasConnectionId: !!connection.connectionId
+            });
         }
     });
 
