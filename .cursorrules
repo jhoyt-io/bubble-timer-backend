@@ -1,10 +1,13 @@
 # Cursor Rules for Bubble Timer Backend
 
-## Deployment Safety Rule
+## Deployment and Version Control Safety Rules
 - NEVER run deployment commands (cdk deploy, npm run deploy, etc.)
 - NEVER execute commands that could modify production infrastructure
+- NEVER commit changes to git without explicit user permission
+- NEVER push changes to remote repositories
 - If infrastructure changes are needed, only suggest them or create the files, but don't deploy
-- Always ask for explicit permission before any deployment-related actions
+- If code changes are made, stage them but wait for explicit permission to commit
+- Always ask for explicit permission before any deployment-related actions or git operations
 
 ## General Development Rules
 - Focus on code analysis, debugging, and file modifications
