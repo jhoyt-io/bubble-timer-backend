@@ -69,6 +69,9 @@ jest.mock('./lib/config', () => ({
           userPoolId: 'us-east-1_test123',
           clientId: 'test-client-id'
         }
+      },
+      endpoint: {
+        endpoint: 'https://test.execute-api.us-east-1.amazonaws.com/prod/'
       }
     },
     environment: {

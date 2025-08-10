@@ -32,8 +32,12 @@ const jwtVerifier = CognitoJwtVerifier.create({
     clientId: authConfig.cognito.clientId,
 });
 
-// Initialize API Gateway Management client
-const connectionClient = Config.websocket;
+// Initialize API Gateway Management client - use simple configuration like working version
+const connectionClient = new ApiGatewayManagementApiClient({
+    endpoint: Config.ws.endpoint.endpoint,
+    region: Config.environment.region,
+    // No retry configuration - let AWS SDK use defaults like working version
+});
 
 /**
  * Enhanced WebSocket handler with proper error handling, validation, and monitoring
@@ -724,36 +728,21 @@ async function sendDataToUser(cognitoUserName: string, sentFromDeviceId: string,
                     messageType: data.type || 'unknown'
                 });
 
-                // Only clean up connection if it's a specific error that indicates the connection is truly stale
-                // ECONNREFUSED and similar network errors should not trigger immediate cleanup
-                // as they could be temporary network issues
-                const shouldCleanup = isConnectionStaleError(error);
+                // Clean up connection immediately on any send failure (like working version)
+                sendLogger.info('Cleaning up connection due to send failure', {
+                    connectionId: connection.connectionId,
+                    deviceId: connection.deviceId,
+                    errorCode
+                });
                 
-                if (shouldCleanup) {
-                    const errorCode = error && typeof error === 'object' && 'code' in error ? (error as any).code : 'unknown';
-                    sendLogger.info('Cleaning up stale connection due to send failure', {
-                        connectionId: connection.connectionId,
-                        deviceId: connection.deviceId,
-                        errorCode
-                    });
-                    
-                    await updateConnection({
-                        userId: cognitoUserName,
-                        deviceId: connection.deviceId,
-                        connectionId: undefined,
-                    });
-                } else {
-                    const errorCode = error && typeof error === 'object' && 'code' in error ? (error as any).code : 'unknown';
-                    sendLogger.debug('Not cleaning up connection - error may be temporary', {
-                        connectionId: connection.connectionId,
-                        deviceId: connection.deviceId,
-                        errorCode
-                    });
-                }
+                await updateConnection({
+                    userId: cognitoUserName,
+                    deviceId: connection.deviceId,
+                    connectionId: undefined,
+                });
                 
-                // Don't throw error - just log it and continue
-                // This prevents the entire WebSocket request from failing
-                // when individual connections are stale
+                // Throw error to match working implementation behavior
+                throw error;
             }
         } else {
             sendLogger.debug('Skipping connection', {
@@ -764,8 +753,8 @@ async function sendDataToUser(cognitoUserName: string, sentFromDeviceId: string,
         }
     });
 
-    // Use Promise.allSettled to handle individual connection failures gracefully
-    await Promise.allSettled(sendPromises);
+    // Use Promise.all to match working implementation - if any send fails, the entire operation fails
+    await Promise.all(sendPromises);
 
     await Monitoring.businessMetric('WebSocketMessagesSent', sendPromises.length, {
         TargetUser: cognitoUserName,
@@ -841,33 +830,26 @@ async function sendDataToDevice(cognitoUserName: string, targetDeviceId: string,
                 messageType: data.type || 'unknown'
             });
 
-            // Only clean up connection if it's a specific error that indicates the connection is truly stale
-            const shouldCleanup = isConnectionStaleError(error);
+            // Clean up connection immediately on any send failure (like working version)
+            sendLogger.info('Cleaning up connection due to targeted send failure', {
+                connectionId: connection.connectionId,
+                deviceId: connection.deviceId,
+                errorCode
+            });
             
-            if (shouldCleanup) {
-                sendLogger.info('Cleaning up stale connection due to targeted send failure', {
-                    connectionId: connection.connectionId,
-                    deviceId: connection.deviceId,
-                    errorCode
-                });
-                
-                await updateConnection({
-                    userId: cognitoUserName,
-                    deviceId: connection.deviceId,
-                    connectionId: undefined,
-                });
-            } else {
-                sendLogger.debug('Not cleaning up connection - error may be temporary', {
-                    connectionId: connection.connectionId,
-                    deviceId: connection.deviceId,
-                    errorCode
-                });
-            }
+            await updateConnection({
+                userId: cognitoUserName,
+                deviceId: connection.deviceId,
+                connectionId: undefined,
+            });
+            
+            // Throw error to match working implementation behavior
+            throw error;
         }
     });
 
-    // Use Promise.allSettled to handle individual connection failures gracefully
-    await Promise.allSettled(sendPromises);
+    // Use Promise.all to match working implementation - if any send fails, the entire operation fails
+    await Promise.all(sendPromises);
 
     await Monitoring.businessMetric('WebSocketTargetedMessagesSent', sendPromises.length, {
         TargetUser: cognitoUserName,
@@ -941,33 +923,26 @@ async function sendDataToUserExceptSender(cognitoUserName: string, senderDeviceI
                 messageType: data.type || 'unknown'
             });
 
-            // Only clean up connection if it's a specific error that indicates the connection is truly stale
-            const shouldCleanup = isConnectionStaleError(error);
+            // Clean up connection immediately on any send failure (like working version)
+            sendLogger.info('Cleaning up connection due to broadcast send failure', {
+                connectionId: connection.connectionId,
+                deviceId: connection.deviceId,
+                errorCode
+            });
             
-            if (shouldCleanup) {
-                sendLogger.info('Cleaning up stale connection due to broadcast send failure', {
-                    connectionId: connection.connectionId,
-                    deviceId: connection.deviceId,
-                    errorCode
-                });
-                
-                await updateConnection({
-                    userId: cognitoUserName,
-                    deviceId: connection.deviceId,
-                    connectionId: undefined,
-                });
-            } else {
-                sendLogger.debug('Not cleaning up connection - error may be temporary', {
-                    connectionId: connection.connectionId,
-                    deviceId: connection.deviceId,
-                    errorCode
-                });
-            }
+            await updateConnection({
+                userId: cognitoUserName,
+                deviceId: connection.deviceId,
+                connectionId: undefined,
+            });
+            
+            // Throw error to match working implementation behavior
+            throw error;
         }
     });
 
-    // Use Promise.allSettled to handle individual connection failures gracefully
-    await Promise.allSettled(sendPromises);
+    // Use Promise.all to match working implementation - if any send fails, the entire operation fails
+    await Promise.all(sendPromises);
 
     await Monitoring.businessMetric('WebSocketBroadcastMessagesSent', sendPromises.length, {
         TargetUser: cognitoUserName,
@@ -975,44 +950,4 @@ async function sendDataToUserExceptSender(cognitoUserName: string, senderDeviceI
     });
 }
 
-/**
- * Determines if a WebSocket send error indicates the connection is truly stale
- * and should be cleaned up from the database
- */
-function isConnectionStaleError(error: unknown): boolean {
-    // Type guard to check if error has a code property
-    if (error && typeof error === 'object' && 'code' in error) {
-        const errorCode = (error as any).code;
-        
-        // These error codes indicate the connection is truly stale/dead
-        const staleErrorCodes = [
-            'GoneException',           // Connection no longer exists
-            'LimitExceededException',  // Connection limit exceeded
-            'ForbiddenException'       // Connection forbidden/expired
-        ];
-        
-        // Network errors like ECONNREFUSED, ETIMEDOUT, etc. are NOT considered stale
-        // as they could be temporary network issues
-        const networkErrorCodes = [
-            'ECONNREFUSED',
-            'ETIMEDOUT', 
-            'ENOTFOUND',
-            'ECONNRESET',
-            'ENETUNREACH'
-        ];
-        
-        if (staleErrorCodes.includes(errorCode)) {
-            return true;
-        }
-        
-        if (networkErrorCodes.includes(errorCode)) {
-            return false;
-        }
-        
-        // For unknown error codes, be conservative and don't clean up
-        return false;
-    }
-    
-    // If we can't determine the error type, be conservative and don't clean up
-    return false;
-}
+
