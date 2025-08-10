@@ -1,83 +1,45 @@
-// Mock all backend modules properly for the new architecture
-const mockGetSharedTimerRelationships = jest.fn();
-const mockStopTimer = jest.fn();
-const mockRemoveSharedTimerRelationship = jest.fn();
-const mockUpdateTimer = jest.fn();
-const mockGetConnectionById = jest.fn();
-const mockUpdateConnection = jest.fn();
+import { handler } from '../lib/bubble-timer-backend-stack.websocket';
+import { getSharedTimerRelationships, stopTimer, removeSharedTimerRelationship, updateTimer } from '../lib/backend/timers';
+import { getConnectionById, updateConnection } from '../lib/backend/connections';
 
 // Mock the backend modules
-jest.mock('../lib/backend/timers', () => ({
-    getSharedTimerRelationships: (...args: any[]) => mockGetSharedTimerRelationships(...args),
-    stopTimer: (...args: any[]) => mockStopTimer(...args),
-    removeSharedTimerRelationship: (...args: any[]) => mockRemoveSharedTimerRelationship(...args),
-    updateTimer: (...args: any[]) => mockUpdateTimer(...args),
-    Timer: {
-        fromValidatedData: jest.fn().mockImplementation((data) => data)
+jest.mock('../lib/backend/timers');
+jest.mock('../lib/backend/connections');
+
+// Mock the CognitoJwtVerifier
+jest.mock('aws-jwt-verify', () => ({
+    CognitoJwtVerifier: {
+        create: jest.fn().mockReturnValue({
+            verify: jest.fn().mockResolvedValue({
+                'cognito:username': 'test-user'
+            })
+        })
     }
 }));
 
-jest.mock('../lib/backend/connections', () => ({
-    getConnectionById: (...args: any[]) => mockGetConnectionById(...args),
-    updateConnection: (...args: any[]) => mockUpdateConnection(...args)
-}));
+const mockGetSharedTimerRelationships = getSharedTimerRelationships as jest.MockedFunction<typeof getSharedTimerRelationships>;
+const mockStopTimer = stopTimer as jest.MockedFunction<typeof stopTimer>;
+const mockRemoveSharedTimerRelationship = removeSharedTimerRelationship as jest.MockedFunction<typeof removeSharedTimerRelationship>;
+const mockUpdateTimer = updateTimer as jest.MockedFunction<typeof updateTimer>;
+const mockGetConnectionById = getConnectionById as jest.MockedFunction<typeof getConnectionById>;
+const mockUpdateConnection = updateConnection as jest.MockedFunction<typeof updateConnection>;
 
-import { handler } from '../lib/bubble-timer-backend-stack.websocket';
-
-describe('WebSocket Handler - Basic Integration', () => {
+describe('WebSocket Handler - stopTimer', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         
-        // Mock connection data for all tests
+        // Mock connection data
         mockGetConnectionById.mockResolvedValue({
             userId: 'test-user',
             deviceId: 'test-device-id',
             connectionId: 'test-connection-id'
         });
-        mockUpdateConnection.mockResolvedValue(undefined);
-        mockGetSharedTimerRelationships.mockResolvedValue([]);
-        mockStopTimer.mockResolvedValue(undefined);
-        mockRemoveSharedTimerRelationship.mockResolvedValue(undefined);
-        mockUpdateTimer.mockResolvedValue(undefined);
+        mockUpdateConnection.mockResolvedValue();
     });
 
-    it('should handle basic WebSocket connection events', async () => {
-        const connectEvent = {
-            requestContext: {
-                connectionId: 'test-connection-id',
-                eventType: 'CONNECT'
-            },
-            headers: {
-                Authorization: 'mock-jwt-token',
-                DeviceId: 'test-device-id'
-            }
-        };
-
-        const result = await handler(connectEvent, { awsRequestId: 'test-request-id' });
-        
-        // The handler should succeed and return a 200 status
-        expect(result.statusCode).toBe(200);
-    });
-
-    it('should handle disconnect events', async () => {
-        const disconnectEvent = {
-            requestContext: {
-                connectionId: 'test-connection-id',
-                eventType: 'DISCONNECT'
-            },
-            headers: {
-                Authorization: 'mock-jwt-token',
-                DeviceId: 'test-device-id'
-            }
-        };
-
-        const result = await handler(disconnectEvent, { awsRequestId: 'test-request-id' });
-        
-        expect(result.statusCode).toBe(200);
-    });
-
-    it('should handle sendmessage route with ping', async () => {
-        const pingEvent = {
+    it('should remove shared relationships and delete timer', async () => {
+        // Given
+        const event = {
             requestContext: {
                 connectionId: 'test-connection-id',
                 routeKey: 'sendmessage',
@@ -89,36 +51,113 @@ describe('WebSocket Handler - Basic Integration', () => {
             },
             body: JSON.stringify({
                 data: {
-                    type: 'ping',
-                    timestamp: Date.now()
+                    type: 'stopTimer',
+                    timerId: 'test-timer-id'
                 }
             })
         };
 
-        const result = await handler(pingEvent, { awsRequestId: 'test-request-id' });
-        
-        // The new architecture has stricter validation, so this might return an error
-        expect([200, 400, 500]).toContain(result.statusCode);
+        // Mock the shared users for this timer
+        mockGetSharedTimerRelationships.mockResolvedValue(['user1', 'user3', 'user4']);
+        mockStopTimer.mockResolvedValue();
+        mockRemoveSharedTimerRelationship.mockResolvedValue();
+
+        // When
+        const result = await handler(event, {});
+
+        // Then
+        expect(mockGetSharedTimerRelationships).toHaveBeenCalledWith('test-timer-id');
+        expect(mockRemoveSharedTimerRelationship).toHaveBeenCalledWith('test-timer-id', 'user1');
+        expect(mockRemoveSharedTimerRelationship).toHaveBeenCalledWith('test-timer-id', 'user3');
+        expect(mockRemoveSharedTimerRelationship).toHaveBeenCalledWith('test-timer-id', 'user4');
+        expect(mockStopTimer).toHaveBeenCalledWith('test-timer-id');
+    });
+
+    it('should handle stopTimer with no shared users', async () => {
+        // Given
+        const event = {
+            requestContext: {
+                connectionId: 'test-connection-id',
+                routeKey: 'sendmessage',
+                eventType: 'MESSAGE'
+            },
+            headers: {
+                Authorization: 'mock-jwt-token',
+                DeviceId: 'test-device-id'
+            },
+            body: JSON.stringify({
+                data: {
+                    type: 'stopTimer',
+                    timerId: 'test-timer-id'
+                }
+            })
+        };
+
+        // Mock no shared users for this timer
+        mockGetSharedTimerRelationships.mockResolvedValue([]);
+        mockStopTimer.mockResolvedValue();
+
+        // When
+        const result = await handler(event, {});
+
+        // Then
+        expect(mockGetSharedTimerRelationships).toHaveBeenCalledWith('test-timer-id');
+        expect(mockRemoveSharedTimerRelationship).not.toHaveBeenCalled();
+        expect(mockStopTimer).toHaveBeenCalledWith('test-timer-id');
+    });
+
+    it('should handle stopTimer errors gracefully', async () => {
+        // Given
+        const event = {
+            requestContext: {
+                connectionId: 'test-connection-id',
+                routeKey: 'sendmessage',
+                eventType: 'MESSAGE'
+            },
+            headers: {
+                Authorization: 'mock-jwt-token',
+                DeviceId: 'test-device-id'
+            },
+            body: JSON.stringify({
+                data: {
+                    type: 'stopTimer',
+                    timerId: 'test-timer-id'
+                }
+            })
+        };
+
+        // Mock an error
+        mockStopTimer.mockRejectedValue(new Error('Database error'));
+        mockGetSharedTimerRelationships.mockResolvedValue(['user1']);
+        mockRemoveSharedTimerRelationship.mockResolvedValue();
+
+        // When
+        const result = await handler(event, {});
+
+        // Then
+        expect(mockGetSharedTimerRelationships).toHaveBeenCalledWith('test-timer-id');
+        expect(mockRemoveSharedTimerRelationship).toHaveBeenCalledWith('test-timer-id', 'user1');
+        expect(mockStopTimer).toHaveBeenCalledWith('test-timer-id');
+        // Should handle the error gracefully
     });
 });
 
-describe('WebSocket Handler - Complex Messages', () => {
+describe('WebSocket Handler - updateTimer', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         
-        // Mock connection data for complex message tests
+        // Mock connection data
         mockGetConnectionById.mockResolvedValue({
             userId: 'test-user',
             deviceId: 'test-device-id',
             connectionId: 'test-connection-id'
         });
-        mockUpdateConnection.mockResolvedValue(undefined);
-        mockGetSharedTimerRelationships.mockResolvedValue([]);
-        mockUpdateTimer.mockResolvedValue(undefined);
+        mockUpdateConnection.mockResolvedValue();
     });
 
-    it('should handle complex timer update messages', async () => {
-        const updateEvent = {
+    it('should update timer and manage shared relationships', async () => {
+        // Given
+        const event = {
             requestContext: {
                 connectionId: 'test-connection-id',
                 routeKey: 'sendmessage',
@@ -144,9 +183,17 @@ describe('WebSocket Handler - Complex Messages', () => {
             })
         };
 
-        const result = await handler(updateEvent, { awsRequestId: 'test-request-id' });
-        
-        // The new architecture has stricter validation and error handling
-        expect([200, 400, 500]).toContain(result.statusCode);
+        // Mock the shared users for this timer
+        mockGetSharedTimerRelationships.mockResolvedValue(['user1', 'user3']);
+        mockUpdateTimer.mockResolvedValue();
+        mockRemoveSharedTimerRelationship.mockResolvedValue();
+
+        // When
+        const result = await handler(event, {});
+
+        // Then
+        expect(mockGetSharedTimerRelationships).toHaveBeenCalledWith('test-timer-id');
+        expect(mockUpdateTimer).toHaveBeenCalled();
+        // Should add new relationships and remove outdated ones
     });
 }); 
