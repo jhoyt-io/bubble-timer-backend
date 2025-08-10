@@ -8,6 +8,7 @@ This directory contains comprehensive documentation for the Bubble Timer backend
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture, data flows, and component responsibilities
 - **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Common commands, debugging steps, and development patterns
 - **[TESTING.md](TESTING.md)** - Testing strategy, patterns, and implementation guidelines
+- **[TEST_COVERAGE.md](TEST_COVERAGE.md)** - Test coverage configuration, reporting, and improvement strategies
 - **[FEATURE_EXTENSION_PATTERNS.md](FEATURE_EXTENSION_PATTERNS.md)** - Guidelines for extending the system with new features
 
 ## Quick Start

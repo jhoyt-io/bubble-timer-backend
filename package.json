@@ -11,7 +11,10 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "build:test": "npm run build && npm run test"
+    "test:coverage:watch": "jest --coverage --watch",
+    "test:coverage:html": "jest --coverage --coverageReporters=html",
+    "build:test": "npm run build && npm run test",
+    "build:test:coverage": "npm run build && npm run test:coverage"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.152",
@@ -40,7 +43,32 @@
     ],
     "collectCoverageFrom": [
       "lib/**/*.ts",
-      "!lib/**/*.d.ts"
-    ]
+      "!lib/**/*.d.ts",
+      "!lib/bubble-timer-application.ts",
+      "!lib/bubble-timer-backend-stack.ts",
+      "!lib/bubble-timer-dns-stack.ts",
+      "!lib/bubble-timer-pipeline-stack.ts",
+      "!lib/bubble-timer-users-stack.ts"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "branches": 80,
+        "functions": 85,
+        "lines": 80,
+        "statements": 80
+      },
+      "./lib/backend/": {
+        "branches": 90,
+        "functions": 95,
+        "lines": 90,
+        "statements": 90
+      }
+    },
+    "coverageReporters": [
+      "text",
+      "lcov",
+      "html"
+    ],
+    "coverageDirectory": "coverage"
   }
 }
