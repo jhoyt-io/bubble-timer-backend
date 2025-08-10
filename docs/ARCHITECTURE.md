@@ -59,35 +59,42 @@ Client Disconnect → Clean Connection → Update State
 
 ## Message Formats
 
-### WebSocket Messages
+### WebSocket Messages (Current Implementation)
 ```typescript
-// Timer Update
+// Timer Update (Mobile App Format)
 {
-  type: 'timer',
-  action: 'update',
-  timer: {
-    id: string,
-    userId: string,
-    name: string,
-    totalDuration: string,
-    remainingDuration?: string,
-    endTime?: string
+  action: "sendmessage",
+  data: {
+    type: 'updateTimer',
+    shareWith: ["user1", "user2"],
+    timer: {
+      id: string,
+      userId: string,
+      name: string,
+      totalDuration: string,
+      remainingDuration?: string,
+      timerEnd?: string  // Mobile app uses timerEnd, not endTime
+    }
   }
 }
 
-// Timer Stop
+// Timer Stop (Mobile App Format)
 {
-  type: 'timer',
-  action: 'stop',
-  timerId: string  // Direct timerId, not nested
+  action: "sendmessage",
+  data: {
+    type: 'stopTimer',
+    timerId: string,  // Direct timerId, not nested in timer object
+    shareWith: ["user1", "user2"]
+  }
 }
 
-// Timer Sharing
+// Ping (keep-alive)
 {
-  type: 'share',
-  action: 'add' | 'remove',
-  timerId: string,
-  sharedWithUser: string
+  action: "sendmessage",
+  data: {
+    type: 'ping',
+    timestamp: number
+  }
 }
 ```
 
@@ -122,7 +129,7 @@ Client Disconnect → Clean Connection → Update State
 
 ### 1. Authentication
 - **Cognito JWT tokens** for API access
-- **WebSocket authentication** via query parameters
+- **WebSocket authentication** via headers (Authorization and DeviceId)
 - **Token validation** on every request
 
 ### 2. Authorization
@@ -175,6 +182,23 @@ Client Disconnect → Clean Connection → Update State
 - **CDK** for all AWS resources
 - **Version-controlled** infrastructure
 - **Automated deployment** via pipeline
+
+## Critical Implementation Patterns
+
+### 1. WebSocket Broadcasting
+- **Sender inclusion**: Timer updates sent to ALL user connections (including sender for confirmation)
+- **Shared user broadcasting**: Fire-and-forget pattern using `forEach().catch()`
+- **Connection cleanup**: Any connection failure triggers cleanup
+
+### 2. Authentication Flow
+- **CONNECT events**: Require authentication for connection storage
+- **DISCONNECT events**: Use connection lookup (no headers available)
+- **Message events**: Full authentication required
+
+### 3. Message Format Handling
+- **Timer updates**: Extract from `data.timer` object with `timerEnd` field
+- **Timer stops**: Extract direct `data.timerId` (not nested)
+- **Sharing**: Use `data.shareWith` array from message
 
 ## Future Considerations
 

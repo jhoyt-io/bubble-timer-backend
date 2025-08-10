@@ -275,6 +275,15 @@ async function handleConnect(
     const connectLogger = requestLogger.child('connect', { connectionId, userId, deviceId });
 
     await Monitoring.time('websocket_connect', async () => {
+        // DEBUG: Log the exact values being passed to updateConnection
+        connectLogger.info('Calling updateConnection with', {
+            userId,
+            deviceId,
+            connectionId,
+            connectionIdType: typeof connectionId,
+            connectionIdLength: connectionId ? connectionId.length : 0
+        });
+        
         await updateConnection({
             userId,
             deviceId,

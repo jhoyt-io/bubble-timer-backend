@@ -71,7 +71,7 @@ Client Disconnect → Clean Connection → Update State
 ## Connection Management
 
 ### 1. Connection Lifecycle
-**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 221-253
+**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 251-284
 
 **Connect Handler Logic**:
 - Store connection in DynamoDB with userId, deviceId, and connectionId
@@ -97,19 +97,24 @@ Client Disconnect → Clean Connection → Update State
 ## Authentication and Security
 
 ### 1. Authentication Flow
-**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 172-220
+**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 178-251
 
 **Authentication Logic**:
-- Extract token and deviceId from query parameters
+- Extract token and deviceId from headers (not query parameters)
 - Verify JWT token using Cognito verifier
 - Return cognitoUserName and deviceId
 - Handle missing or invalid tokens gracefully
+
+**Key Authentication Details**:
+- **Token format**: Mobile app sends ID token directly (no "Bearer " prefix required)
+- **JWT verification**: Uses `tokenUse: 'id'` in verifier creation, no additional parameters in verify() call
+- **Configuration**: Uses same Cognito settings as working implementation (`us-east-1_cjED6eOHp`, `4t3c5p3875qboh3p1va2t9q63c`)
 
 ### 2. Event-Specific Authentication Requirements
 
 | Event Type | Authentication Required | Method | Notes |
 |------------|------------------------|---------|-------|
-| **CONNECT** | ❌ No (allows unauthenticated) | Token in headers OR connection lookup | Initial handshake, returns `connected_limited` if no auth |
+| **CONNECT** | ✅ Yes (for connection storage) | Token in headers | Only stores connection if authentication succeeds |
 | **DISCONNECT** | ❌ No | Connection lookup by ID | No headers available, looks up stored connection |
 | **sendmessage** | ✅ Yes | Token in headers | Full authentication required with JWT token |
 
@@ -122,7 +127,7 @@ Client Disconnect → Clean Connection → Update State
 ## Message Routing
 
 ### 1. Message Handler
-**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 287-364
+**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 335-412
 
 **Routing Logic**:
 - Validate WebSocket message using ValidationMiddleware
@@ -130,16 +135,16 @@ Client Disconnect → Clean Connection → Update State
 - Handle unknown message types with error response
 
 ### 2. Timer Message Processing
-**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 397-448
+**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 445-496
 
 **Processing Logic**:
 - Generate unique messageId for tracking
-- Send message to all user connections (including sender)
+- Send message to all user connections (including sender for confirmation)
 - For timer updates/stops: handle sharing and persistence
 - Return success with messageId
 
 ### 3. Ping/Pong Handling
-**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 365-388
+**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 413-436
 
 **Ping/Pong Logic**:
 - Generate pong response with timestamp
@@ -149,7 +154,7 @@ Client Disconnect → Clean Connection → Update State
 ## Broadcasting Patterns
 
 ### 1. User-to-User Broadcasting
-**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 601-675
+**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 649-723
 
 **Broadcasting Logic**:
 - Retrieve all connections for target user
@@ -160,7 +165,7 @@ Client Disconnect → Clean Connection → Update State
 - Use Promise.allSettled for graceful failure handling
 
 ### 2. Shared Timer Broadcasting
-**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 449-482
+**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 497-530
 
 **Sharing Logic**:
 - Extract timerId from message (handles both updateTimer and stopTimer formats)
@@ -179,7 +184,7 @@ Client Disconnect → Clean Connection → Update State
 ## Timer Persistence
 
 ### 1. Timer Update Processing
-**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 483-600
+**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 531-648
 
 **Update Logic**:
 - Handle mobile app format: extract fields from `data.timer` object
@@ -194,7 +199,7 @@ Client Disconnect → Clean Connection → Update State
 ## Error Handling
 
 ### 1. Connection Failures
-**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 601-675
+**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 649-723
 
 **Error Handling Logic**:
 - Clean up on ANY connection failure (not just specific error types)
@@ -203,7 +208,7 @@ Client Disconnect → Clean Connection → Update State
 - Use Promise.allSettled for batch operations
 
 ### 2. Message Processing Errors
-**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 287-364
+**Implementation**: `lib/bubble-timer-backend-stack.websocket.ts` lines 335-412
 
 **Error Handling Logic**:
 - Wrap message handling in error boundary
@@ -349,19 +354,28 @@ Client Disconnect → Clean Connection → Update State
 ## Recent Implementation Notes
 
 ### Key Fixes Applied
-1. **DISCONNECT Authentication**: DISCONNECT events now use connection lookup instead of requiring authentication headers
-2. **Ping/Pong Routing**: Pong messages are sent to ALL connections (including sender) using empty `sentFromDeviceId`
-3. **Fire-and-forget Broadcasting**: Timer sharing uses `forEach().catch()` for non-blocking broadcasts
-4. **Stale Connection Cleanup**: Any connection error triggers cleanup, not just specific error types
-5. **Promise.allSettled**: Batch operations use `Promise.allSettled` for graceful failure handling
+1. **CONNECT Authentication**: CONNECT events now require authentication for connection storage (matches working implementation)
+2. **JWT Verification**: Removed redundant `{ tokenUse: 'id' }` parameter from verify() call
+3. **Sender Inclusion**: Timer updates now send to ALL user connections (including sender for confirmation)
+4. **Fire-and-forget Broadcasting**: Timer sharing uses `forEach().catch()` for non-blocking broadcasts
+5. **Stale Connection Cleanup**: Any connection error triggers cleanup, not just specific error types
+6. **Promise.allSettled**: Batch operations use `Promise.allSettled` for graceful failure handling
 
 ### Interface Preservation
 - **Mobile app format**: Supports `data.timer` object structure with `timerEnd` field
 - **Stop timer format**: Uses direct `data.timerId` for stop messages
 - **Sharing format**: Uses `data.shareWith` array from message instead of database queries
 - **Message routing**: Maintains original message type handling (`updateTimer`, `stopTimer`, `ping`)
+- **Authentication**: Uses same Cognito configuration as working implementation
 
 ### Authentication Flow
-- **CONNECT**: Allows unauthenticated, returns `connected_limited` status
+- **CONNECT**: Requires authentication for connection storage, returns `connected_limited` if no auth
 - **DISCONNECT**: No authentication required, uses connection lookup
 - **sendmessage**: Full authentication required with JWT token
+
+### Critical Implementation Details
+- **Token format**: Mobile app sends ID token directly (no "Bearer " prefix)
+- **JWT verifier**: Uses `tokenUse: 'id'` in creation, no additional parameters in verify()
+- **Connection storage**: Only happens when authentication succeeds
+- **Broadcasting**: Sender receives their own timer updates for confirmation
+- **Error handling**: Simple cleanup on any connection failure

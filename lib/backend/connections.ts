@@ -39,8 +39,26 @@ async function updateConnection(connection: Connection): Promise<void> {
         });
         
         try {
+            // DEBUG: Log the raw connection data before validation
+            connLogger.info('Raw connection data received', {
+                userId: connection.userId,
+                deviceId: connection.deviceId,
+                connectionId: connection.connectionId,
+                connectionIdType: typeof connection.connectionId,
+                connectionIdLength: connection.connectionId ? connection.connectionId.length : 0
+            });
+            
             // Validate connection data
             const validatedConnection = Connection.fromValidatedData(connection);
+            
+            // DEBUG: Log the validated connection data
+            connLogger.info('Validated connection data', {
+                userId: validatedConnection.userId,
+                deviceId: validatedConnection.deviceId,
+                connectionId: validatedConnection.connectionId,
+                connectionIdType: typeof validatedConnection.connectionId,
+                connectionIdLength: validatedConnection.connectionId ? validatedConnection.connectionId.length : 0
+            });
             
             const client = Config.database;
             let command;
@@ -96,6 +114,13 @@ async function updateConnection(connection: Connection): Promise<void> {
                 });
             }
 
+            // DEBUG: Log which command is being executed
+            connLogger.info('Executing DynamoDB command', {
+                hasConnectionId: !!validatedConnection.connectionId,
+                operation: validatedConnection.connectionId ? 'PUT connection_id' : 'DELETE connection_id',
+                tableName: Config.tables.userConnections
+            });
+            
             const results = await client.send(command);
             connLogger.info('Connection updated successfully', {
                 userId: validatedConnection.userId,

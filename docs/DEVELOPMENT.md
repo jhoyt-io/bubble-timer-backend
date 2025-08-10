@@ -145,11 +145,11 @@ const timer = Timer.fromValidatedData(validatedTimer);
 ```typescript
 // Route messages by type
 switch (data.type) {
-    case 'timer':
+    case 'updateTimer':
         await handleTimerMessage(data, userId, deviceId, logger);
         break;
-    case 'share':
-        await handleTimerSharing(data, deviceId, logger);
+    case 'stopTimer':
+        await handleTimerMessage(data, userId, deviceId, logger);
         break;
     case 'ping':
         await handlePingMessage(data, userId, deviceId, logger);
@@ -161,31 +161,32 @@ switch (data.type) {
 
 ### 2. Broadcasting Patterns
 ```typescript
-// Send to user's connections first
-await sendDataToUser(userId, deviceId, data);
+// Send to user's connections first (including sender for confirmation)
+await sendDataToUser(userId, '', data);  // Empty sentFromDeviceId = send to ALL
 
-// Then broadcast to shared users
-const sharedUsers = await getSharedTimerRelationships(timerId);
-for (const sharedUser of sharedUsers) {
-    try {
-        await sendDataToUser(sharedUser, '', data);
-    } catch (error) {
-        logger.error('Failed to send to shared user', { 
-            sharedUser, 
-            error: error.message 
+// Then broadcast to shared users (fire-and-forget)
+if (data.shareWith && data.shareWith.length > 0) {
+    data.shareWith.forEach(userName => {
+        sendDataToUser(userName, deviceId, data).catch(error => {
+            logger.error('Failed to send to shared user', { 
+                userName, 
+                error: error.message 
+            });
         });
-    }
+    });
 }
 ```
 
 ### 3. Connection Management
 ```typescript
-// Store connection on connect
-await updateConnection({
-    userId: cognitoUserName,
-    deviceId: deviceId,
-    connectionId: connectionId
-});
+// Store connection on connect (only if authentication succeeds)
+if (cognitoUserName) {
+    await updateConnection({
+        userId: cognitoUserName,
+        deviceId: deviceId,
+        connectionId: connectionId
+    });
+}
 
 // Clean up on disconnect
 await updateConnection({
@@ -193,6 +194,20 @@ await updateConnection({
     deviceId: deviceId,
     connectionId: undefined
 });
+```
+
+### 4. Authentication Patterns
+```typescript
+// JWT verification (matches working implementation)
+const jwtVerifier = CognitoJwtVerifier.create({
+    userPoolId: 'us-east-1_cjED6eOHp',
+    tokenUse: 'id',
+    clientId: '4t3c5p3875qboh3p1va2t9q63c',
+});
+
+// Verify token (no additional parameters)
+const payload = await jwtVerifier.verify(cognitoToken);
+const cognitoUserName = payload['cognito:username'];
 ```
 
 ## Database Operations
@@ -298,10 +313,12 @@ npx cdk destroy --profile production
 ### 1. WebSocket Connection Issues
 - **Problem**: Connections not persisting
 - **Solution**: Check DynamoDB permissions and connection table structure
+- **Recent Fix**: Ensure CONNECT events require authentication for connection storage
 
 ### 2. Timer Synchronization Problems
 - **Problem**: Updates not broadcasting to shared users
 - **Solution**: Verify sharing relationships and connection state
+- **Recent Fix**: Ensure sender receives their own timer updates for confirmation
 
 ### 3. Performance Issues
 - **Problem**: High Lambda cold start times
@@ -310,6 +327,7 @@ npx cdk destroy --profile production
 ### 4. Authentication Errors
 - **Problem**: JWT validation failures
 - **Solution**: Check Cognito configuration and token format
+- **Recent Fix**: Remove redundant `{ tokenUse: 'id' }` parameter from verify() call
 
 ## Best Practices
 
@@ -332,6 +350,12 @@ npx cdk destroy --profile production
 - **Structured logging**: Use consistent log formats
 - **Metrics**: Track key performance indicators
 - **Health checks**: Monitor service availability
+
+### 5. WebSocket-Specific Patterns
+- **Sender inclusion**: Always send timer updates to sender for confirmation
+- **Fire-and-forget**: Use `forEach().catch()` for shared user broadcasts
+- **Simple error handling**: Clean up connections on any failure
+- **Preserve interfaces**: Don't change message formats without coordination
 
 ## Troubleshooting
 
@@ -368,4 +392,16 @@ npm test -- timers.test.ts
 
 # Check test coverage
 npm run test:coverage
+```
+
+### 4. WebSocket Debugging
+```bash
+# Check WebSocket logs
+aws logs filter-log-events --log-group-name /aws/lambda/BubbleTimerBackend-websocket
+
+# Monitor connection table
+aws dynamodb scan --table-name UserConnections --select COUNT
+
+# Test WebSocket endpoint
+wscat -c wss://your-websocket-endpoint -H "Authorization: your-token" -H "DeviceId: test-device"
 ```
