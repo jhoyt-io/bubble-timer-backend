@@ -128,11 +128,12 @@ export class ResponseUtils {
 
     /**
      * Creates a ping response for WebSocket
+     * Matches original implementation: simple structure expected by frontend
      */
     static pong(originalTimestamp?: string): any {
-        return this.websocketMessage('pong', {
-            timestamp: originalTimestamp || new Date().toISOString(),
-            serverTimestamp: new Date().toISOString()
-        });
+        return {
+            type: 'pong',
+            timestamp: originalTimestamp || new Date().toISOString()
+        };
     }
 }
