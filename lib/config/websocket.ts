@@ -26,8 +26,14 @@ export class WebSocketConfig {
         return new ApiGatewayManagementApiClient({
             region: config.region,
             endpoint: config.websocket.endpoint,
-            maxAttempts: 3,
-            retryMode: 'adaptive'
+            maxAttempts: 5, // Increased from 3 for better resilience
+            retryMode: 'adaptive',
+            requestHandler: {
+                httpOptions: {
+                    timeout: 10000, // 10 seconds
+                    connectTimeout: 5000 // 5 seconds
+                }
+            }
         });
     }
 

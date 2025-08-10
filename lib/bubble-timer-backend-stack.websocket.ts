@@ -32,12 +32,28 @@ const jwtVerifier = CognitoJwtVerifier.create({
     clientId: authConfig.cognito.clientId,
 });
 
-// Initialize API Gateway Management client - use simple configuration like working version
-const connectionClient = new ApiGatewayManagementApiClient({
-    endpoint: Config.ws.endpoint.endpoint,
-    region: Config.environment.region,
-    // No retry configuration - let AWS SDK use defaults like working version
-});
+// Initialize API Gateway Management client - use configured client with retry settings
+const connectionClient = Config.websocket;
+
+/**
+ * Determines if an error indicates a stale connection that should be cleaned up
+ * ECONNREFUSED is NOT considered stale - it's a transient network error
+ */
+function isConnectionStaleError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') return false;
+    
+    const errorObj = error as any;
+    const errorCode = errorObj.code || errorObj.name || '';
+    const errorMessage = errorObj.message || '';
+    
+    // These are the only errors that indicate a truly stale connection
+    return errorCode === 'GoneException' || 
+           errorCode === 'LimitExceededException' || 
+           errorCode === 'ForbiddenException' ||
+           errorMessage.includes('GoneException') ||
+           errorMessage.includes('LimitExceededException') ||
+           errorMessage.includes('ForbiddenException');
+}
 
 /**
  * Enhanced WebSocket handler with proper error handling, validation, and monitoring
@@ -498,7 +514,7 @@ async function handleTimerMessage(
             timerId: data.type === 'stopTimer' ? data.timerId : (data.timer?.id || data.timerId)
         });
         
-        handleTimerSharing(data, deviceId, timerLogger);
+        await handleTimerSharing(data, deviceId, timerLogger);
         await handleTimerPersistence(data, timerLogger);
         
         timerLogger.info('Completed timer message processing', {
@@ -521,7 +537,7 @@ async function handleTimerMessage(
 /**
  * Handles timer sharing logic
  */
-function handleTimerSharing(data: any, senderDeviceId: string, timerLogger: MonitoringLogger): void {
+async function handleTimerSharing(data: any, senderDeviceId: string, timerLogger: MonitoringLogger): Promise<void> {
     const timerId = data.type === 'stopTimer' ? data.timerId : (data.timerId || data.timer?.id);
     if (!timerId) return;
 
@@ -540,15 +556,30 @@ function handleTimerSharing(data: any, senderDeviceId: string, timerLogger: Moni
         return;
     }
 
-    // Send to all users sharing the timer - fire-and-forget like original
-    sharedUsers.forEach((userName: string) => {
-        sendDataToUserExceptSender(userName, senderDeviceId, data).catch((error) => {
+    // Send to all users sharing the timer - await all sends to prevent Lambda termination
+    const sendPromises = sharedUsers.map(async (userName: string) => {
+        try {
+            await sendDataToUserExceptSender(userName, senderDeviceId, data);
+            timerLogger.debug('Successfully sent timer update to shared user', {
+                timerId,
+                sharedUser: userName
+            });
+        } catch (error) {
             timerLogger.error('Failed to send timer update to shared user', {
                 error,
                 timerId,
                 sharedUser: userName
             });
-        });
+            // Don't throw - let other sends continue
+        }
+    });
+    
+    // Wait for all sends to complete before Lambda returns
+    await Promise.allSettled(sendPromises);
+    
+    timerLogger.info('Completed sending timer updates to all shared users', {
+        timerId,
+        sharedUsersCount: sharedUsers.length
     });
 }
 
@@ -728,21 +759,28 @@ async function sendDataToUser(cognitoUserName: string, sentFromDeviceId: string,
                     messageType: data.type || 'unknown'
                 });
 
-                // Clean up connection immediately on any send failure (like working version)
-                sendLogger.info('Cleaning up connection due to send failure', {
-                    connectionId: connection.connectionId,
-                    deviceId: connection.deviceId,
-                    errorCode
-                });
+                // Only clean up connection if it's truly stale
+                if (isConnectionStaleError(error)) {
+                    sendLogger.info('Cleaning up stale connection', {
+                        connectionId: connection.connectionId,
+                        deviceId: connection.deviceId,
+                        errorCode
+                    });
+                    
+                    await updateConnection({
+                        userId: cognitoUserName,
+                        deviceId: connection.deviceId,
+                        connectionId: undefined,
+                    });
+                } else {
+                    sendLogger.info('Connection error is transient, not cleaning up', {
+                        connectionId: connection.connectionId,
+                        deviceId: connection.deviceId,
+                        errorCode
+                    });
+                }
                 
-                await updateConnection({
-                    userId: cognitoUserName,
-                    deviceId: connection.deviceId,
-                    connectionId: undefined,
-                });
-                
-                // Throw error to match working implementation behavior
-                throw error;
+                // Don't throw error - let other sends continue
             }
         } else {
             sendLogger.debug('Skipping connection', {
@@ -753,10 +791,21 @@ async function sendDataToUser(cognitoUserName: string, sentFromDeviceId: string,
         }
     });
 
-    // Use Promise.all to match working implementation - if any send fails, the entire operation fails
-    await Promise.all(sendPromises);
+    // Use Promise.allSettled to allow some sends to fail without failing the entire operation
+    const results = await Promise.allSettled(sendPromises);
+    
+    // Log results for monitoring
+    const successful = results.filter(result => result.status === 'fulfilled').length;
+    const failed = results.filter(result => result.status === 'rejected').length;
+    
+    sendLogger.info('Send operation completed', {
+        targetUser: cognitoUserName,
+        successful,
+        failed,
+        total: results.length
+    });
 
-    await Monitoring.businessMetric('WebSocketMessagesSent', sendPromises.length, {
+    await Monitoring.businessMetric('WebSocketMessagesSent', successful, {
         TargetUser: cognitoUserName,
         MessageType: data.type || 'unknown'
     });
@@ -830,28 +879,47 @@ async function sendDataToDevice(cognitoUserName: string, targetDeviceId: string,
                 messageType: data.type || 'unknown'
             });
 
-            // Clean up connection immediately on any send failure (like working version)
-            sendLogger.info('Cleaning up connection due to targeted send failure', {
-                connectionId: connection.connectionId,
-                deviceId: connection.deviceId,
-                errorCode
-            });
+            // Only clean up connection if it's truly stale
+            if (isConnectionStaleError(error)) {
+                sendLogger.info('Cleaning up stale connection', {
+                    connectionId: connection.connectionId,
+                    deviceId: connection.deviceId,
+                    errorCode
+                });
+                
+                await updateConnection({
+                    userId: cognitoUserName,
+                    deviceId: connection.deviceId,
+                    connectionId: undefined,
+                });
+            } else {
+                sendLogger.info('Connection error is transient, not cleaning up', {
+                    connectionId: connection.connectionId,
+                    deviceId: connection.deviceId,
+                    errorCode
+                });
+            }
             
-            await updateConnection({
-                userId: cognitoUserName,
-                deviceId: connection.deviceId,
-                connectionId: undefined,
-            });
-            
-            // Throw error to match working implementation behavior
-            throw error;
+            // Don't throw error - let other sends continue
         }
     });
 
-    // Use Promise.all to match working implementation - if any send fails, the entire operation fails
-    await Promise.all(sendPromises);
+    // Use Promise.allSettled to allow some sends to fail without failing the entire operation
+    const results = await Promise.allSettled(sendPromises);
+    
+    // Log results for monitoring
+    const successful = results.filter(result => result.status === 'fulfilled').length;
+    const failed = results.filter(result => result.status === 'rejected').length;
+    
+    sendLogger.info('Targeted send operation completed', {
+        targetUser: cognitoUserName,
+        targetDevice: targetDeviceId,
+        successful,
+        failed,
+        total: results.length
+    });
 
-    await Monitoring.businessMetric('WebSocketTargetedMessagesSent', sendPromises.length, {
+    await Monitoring.businessMetric('WebSocketTargetedMessagesSent', successful, {
         TargetUser: cognitoUserName,
         TargetDevice: targetDeviceId,
         MessageType: data.type || 'unknown'
@@ -923,28 +991,47 @@ async function sendDataToUserExceptSender(cognitoUserName: string, senderDeviceI
                 messageType: data.type || 'unknown'
             });
 
-            // Clean up connection immediately on any send failure (like working version)
-            sendLogger.info('Cleaning up connection due to broadcast send failure', {
-                connectionId: connection.connectionId,
-                deviceId: connection.deviceId,
-                errorCode
-            });
+            // Only clean up connection if it's truly stale
+            if (isConnectionStaleError(error)) {
+                sendLogger.info('Cleaning up stale connection', {
+                    connectionId: connection.connectionId,
+                    deviceId: connection.deviceId,
+                    errorCode
+                });
+                
+                await updateConnection({
+                    userId: cognitoUserName,
+                    deviceId: connection.deviceId,
+                    connectionId: undefined,
+                });
+            } else {
+                sendLogger.info('Connection error is transient, not cleaning up', {
+                    connectionId: connection.connectionId,
+                    deviceId: connection.deviceId,
+                    errorCode
+                });
+            }
             
-            await updateConnection({
-                userId: cognitoUserName,
-                deviceId: connection.deviceId,
-                connectionId: undefined,
-            });
-            
-            // Throw error to match working implementation behavior
-            throw error;
+            // Don't throw error - let other sends continue
         }
     });
 
-    // Use Promise.all to match working implementation - if any send fails, the entire operation fails
-    await Promise.all(sendPromises);
+    // Use Promise.allSettled to allow some sends to fail without failing the entire operation
+    const results = await Promise.allSettled(sendPromises);
+    
+    // Log results for monitoring
+    const successful = results.filter(result => result.status === 'fulfilled').length;
+    const failed = results.filter(result => result.status === 'rejected').length;
+    
+    sendLogger.info('Broadcast send operation completed', {
+        targetUser: cognitoUserName,
+        senderDevice: senderDeviceId,
+        successful,
+        failed,
+        total: results.length
+    });
 
-    await Monitoring.businessMetric('WebSocketBroadcastMessagesSent', sendPromises.length, {
+    await Monitoring.businessMetric('WebSocketBroadcastMessagesSent', successful, {
         TargetUser: cognitoUserName,
         MessageType: data.type || 'unknown'
     });
