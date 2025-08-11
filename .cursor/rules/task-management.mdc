@@ -1,0 +1,15 @@
+
+---
+description: "Task Management - Guidelines for using the tasks directory system"
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Task Management
+
+- Use the `tasks/` directory for tracking major work and implementation plans
+- Create implementation plans in `tasks/active/` when explicitly requested by the user
+- Create summary files in `tasks/done/` for major changes that affect 50%+ of the codebase or fundamental architectural approaches
+- Use `TASK_TEMPLATE.md` as a starting point for new tasks
+- Do NOT create task files for every chat - only for significant work or when explicitly requested
+- When completing major work, create a summary file in `tasks/done/` documenting the changes, decisions, and outcomes

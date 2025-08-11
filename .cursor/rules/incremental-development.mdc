@@ -1,0 +1,18 @@
+---
+description: "Incremental Development - TDD approach with step-by-step development"
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Incremental Development
+
+- ALWAYS follow the incremental development loop:
+  1. Build and run tests to establish baseline before making changes
+  2. Add a test that will fail until your new feature/change is complete (TDD approach)
+  3. Make an incremental step toward the final solution
+  4. Add relevant tests to cover what you've written
+  5. Ensure all tests pass, including the initial acceptance tests
+  6. Proceed with the next step toward the final solution
+- NO big-bang changes: Every change should be small, testable, and verifiable
+- Every step should be well-tested to guard against regressions
+- If a change is large, break it into smaller, incremental steps that can be tested independently

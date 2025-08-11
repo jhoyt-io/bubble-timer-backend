@@ -1,0 +1,14 @@
+
+---
+description: "Architecture Context - Backend-specific architectural patterns"
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Architecture Context
+
+- ALWAYS read `docs/ARCHITECTURE.md` first for data flows and component responsibilities
+- Reference `docs/QUICK_REFERENCE.md` for debugging commands and common patterns
+- Check `docs/FEATURE_EXTENSION_PATTERNS.md` for guidance on extending core systems
+- Use the documentation to understand WebSocket, API Gateway, and DynamoDB patterns before making changes
+- Key architecture points: Lambda handlers → DynamoDB operations, WebSocket connections, API Gateway responses

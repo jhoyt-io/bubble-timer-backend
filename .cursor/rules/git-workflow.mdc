@@ -1,0 +1,13 @@
+---
+description: "Git and Code Management - Human-AI development workflow"
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Git and Code Management
+
+- NEVER commit code directly to main branch
+- Stage changes for human review instead of committing
+- Work on feature branches when appropriate and ask for merge reviews
+- Use git to view history and understand context, but don't commit without explicit permission
+- The human-AI devloop: Stage changes → Human review → Human commits/pushes

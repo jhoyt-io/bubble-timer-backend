@@ -1,0 +1,22 @@
+
+---
+description: "Testing Requirements - Comprehensive testing guidelines with WebSocket focus"
+globs: ["**/*.ts", "**/*.js", "__tests__/**/*"]
+alwaysApply: false
+---
+
+# Testing Requirements
+
+When working with TypeScript/JavaScript files or tests:
+- ALWAYS run tests before and after any changes: `npm run build:test`
+- Maintain or improve test coverage with every change
+- Focus on comprehensive WebSocket testing - this is the top priority
+- Test WebSocket message handling, DynamoDB interactions, and API Gateway responses
+- Simulate real device interactions in tests
+- Add integration tests for end-to-end flows
+- Test error scenarios and edge cases
+- Use Given/When/Then pattern for all tests to tell a complete story
+- Structure tests as: `describe("Given [context]", () => { describe("When [action]", () => { test("Then [expected outcome]", () => { ... }) }) })`
+- Make test names descriptive and avoid "it should" patterns
+- Ensure tests serve as documentation of expected behavior
+- Write tests that can serve as a blueprint for implementation

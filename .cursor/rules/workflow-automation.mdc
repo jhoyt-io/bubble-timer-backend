@@ -1,0 +1,22 @@
+
+---
+description: "Workflow Automation - Automated development workflows"
+globs: ["**/*"]
+alwaysApply: false
+---
+
+# Workflow Automation
+
+When asked to analyze the app or implement features:
+1. Run tests to establish baseline: `npm run build:test`
+2. Check current test coverage and status
+3. Follow incremental development loop for any changes
+4. Ensure all tests pass before proceeding
+5. Document significant changes in appropriate files
+
+When working on WebSocket functionality:
+1. Review existing WebSocket tests first
+2. Add comprehensive tests for new WebSocket features
+3. Test both success and error scenarios
+4. Verify DynamoDB interactions
+5. Test API Gateway responses

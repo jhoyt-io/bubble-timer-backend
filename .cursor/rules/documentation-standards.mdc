@@ -1,0 +1,18 @@
+
+---
+description: "Documentation Standards - Guidelines for maintaining project documentation"
+globs: ["docs/**/*", "README.md", "**/*.md"]
+alwaysApply: false
+---
+
+# Documentation Standards
+
+When working with documentation files:
+- Keep `docs/` directory updated with current architecture and patterns
+- Document any new patterns or architectural decisions
+- Maintain `QUICK_REFERENCE.md` with common commands and debugging steps
+- Update `ARCHITECTURE.md` when making significant architectural changes
+- Document test patterns and strategies in `TESTING.md`
+- Use clear, concise language in documentation
+- Include code examples where appropriate
+- Keep documentation synchronized with code changes

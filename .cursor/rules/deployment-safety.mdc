@@ -1,0 +1,13 @@
+
+---
+description: "Deployment Safety Rules - Never deploy without explicit permission"
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Deployment Safety Rules
+
+- NEVER run deployment commands (cdk deploy, npm run deploy, etc.)
+- NEVER execute commands that could modify production infrastructure
+- If infrastructure changes are needed, only suggest them or create the files, but don't deploy
+- Always ask for explicit permission before any deployment-related actions
