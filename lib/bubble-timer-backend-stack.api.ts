@@ -1,4 +1,5 @@
-import { getTimer, updateTimer, Timer, getTimersSharedWithUser, removeSharedTimerRelationship } from "./backend/timers";
+import { getTimer, updateTimer, Timer, getTimersSharedWithUser, removeSharedTimerRelationship, shareTimerWithUsers } from "./backend/timers";
+import { NotificationService } from "./backend/notifications";
 import { createApiLogger } from './core/logger';
 
 export async function handler(event: any, context: any) {
@@ -76,6 +77,32 @@ export async function handler(event: any, context: any) {
                     userLogger.debug('Shared timers retrieved', { 
                         sharedTimerCount: sharedTimers.length 
                     });
+                } else if (event.httpMethod == 'POST') {
+                    userLogger.info('Processing POST shared timer request');
+                    const body = JSON.parse(event.body || '{}');
+                    const { timerId, userIds } = body;
+                    
+                    if (timerId && userIds && Array.isArray(userIds)) {
+                        try {
+                            const result = await shareTimerWithUsers(timerId, cognitoUserName, userIds);
+                            resultBody = JSON.stringify({
+                                result: 'shared',
+                                success: result.success,
+                                failed: result.failed
+                            });
+                            userLogger.info('Timer shared successfully', { 
+                                timerId, 
+                                successCount: result.success.length,
+                                failedCount: result.failed.length 
+                            });
+                        } catch (error) {
+                            resultBody = JSON.stringify({ 'error': 'Failed to share timer' });
+                            userLogger.error('Failed to share timer', { timerId }, error);
+                        }
+                    } else {
+                        resultBody = JSON.stringify({ 'error': 'Missing timerId or userIds in request body' });
+                        userLogger.warn('Missing timerId or userIds in POST shared timer request');
+                    }
                 } else if (event.httpMethod == 'DELETE') {
                     userLogger.info('Processing DELETE shared timer request');
                     const body = JSON.parse(event.body || '{}');
@@ -93,6 +120,46 @@ export async function handler(event: any, context: any) {
                     } else {
                         resultBody = JSON.stringify({ 'error': 'Missing timerId in request body' });
                         userLogger.warn('Missing timerId in DELETE shared timer request');
+                    }
+                }
+            } else if (event.resource == '/device-tokens') {
+                userLogger.debug('Processing DEVICE TOKENS resource');
+                const notificationService = new NotificationService();
+                
+                if (event.httpMethod == 'POST') {
+                    userLogger.info('Processing POST device token request');
+                    const body = JSON.parse(event.body || '{}');
+                    const { deviceId, fcmToken } = body;
+                    
+                    if (deviceId && fcmToken) {
+                        try {
+                            await notificationService.registerDeviceToken(cognitoUserName, deviceId, fcmToken);
+                            resultBody = JSON.stringify({ 'result': 'registered' });
+                            userLogger.info('Device token registered successfully', { deviceId });
+                        } catch (error) {
+                            resultBody = JSON.stringify({ 'error': 'Failed to register device token' });
+                            userLogger.error('Failed to register device token', { deviceId }, error);
+                        }
+                    } else {
+                        resultBody = JSON.stringify({ 'error': 'Missing deviceId or fcmToken in request body' });
+                        userLogger.warn('Missing deviceId or fcmToken in POST device token request');
+                    }
+                }
+            } else if (event.resource == '/device-tokens/{deviceId}') {
+                userLogger.debug('Processing DEVICE TOKEN resource', { deviceId: splitPath[2] });
+                const notificationService = new NotificationService();
+                const deviceId = splitPath[2];
+                
+                if (event.httpMethod == 'DELETE') {
+                    userLogger.info('Processing DELETE device token request', { deviceId });
+                    
+                    try {
+                        await notificationService.removeDeviceToken(cognitoUserName, deviceId);
+                        resultBody = JSON.stringify({ 'result': 'removed' });
+                        userLogger.info('Device token removed successfully', { deviceId });
+                    } catch (error) {
+                        resultBody = JSON.stringify({ 'error': 'Failed to remove device token' });
+                        userLogger.error('Failed to remove device token', { deviceId }, error);
                     }
                 }
             }

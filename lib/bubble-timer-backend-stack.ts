@@ -8,8 +8,13 @@ import { WebSocketApi, WebSocketAuthorizer, WebSocketStage } from "aws-cdk-lib/a
 import { HttpUserPoolAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { WebSocketLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 
+import { StringParameter } from "aws-cdk-lib/aws-ssm";
+import { PolicyStatement, Effect } from "aws-cdk-lib/aws-iam";
+
+
 export interface BackendStackProps extends StackProps {
     readonly userPoolArn: string;
+    readonly snsPlatformApplicationArn: string;
 }
 
 export class BackendStack extends Stack {
@@ -68,6 +73,23 @@ export class BackendStack extends Stack {
             defaultCorsPreflightOptions: this.defaultCorsPreflightOptions,
         });
         timerResource.addMethod('ANY', undefined, {
+            authorizer: auth,
+            authorizationType: AuthorizationType.COGNITO,
+        });
+
+        // Device Tokens API endpoints
+        const deviceTokensResource = restApi.root.addResource('device-tokens', {
+            defaultCorsPreflightOptions: this.defaultCorsPreflightOptions,
+        });
+        deviceTokensResource.addMethod('ANY', undefined, {
+            authorizer: auth,
+            authorizationType: AuthorizationType.COGNITO,
+        });
+
+        const deviceTokenResource = deviceTokensResource.addResource('{deviceId}', {
+            defaultCorsPreflightOptions: this.defaultCorsPreflightOptions,
+        });
+        deviceTokenResource.addMethod('ANY', undefined, {
             authorizer: auth,
             authorizationType: AuthorizationType.COGNITO,
         });
@@ -160,6 +182,56 @@ export class BackendStack extends Stack {
         apiBackendFunction.addEnvironment('SHARED_TIMERS_TABLE_NAME', sharedTimersTable.tableName);
         webSocketBackendFunction.addEnvironment('SHARED_TIMERS_TABLE_NAME', sharedTimersTable.tableName);
 
+        // Device Tokens Table for Push Notifications
+        const deviceTokensTable = new Table(this, 'DeviceTokens', {
+            partitionKey: {
+                name: 'user_id', type: AttributeType.STRING
+            },
+            sortKey: {
+                name: 'device_id', type: AttributeType.STRING
+            },
+            billingMode: BillingMode.PAY_PER_REQUEST,
+        });
+        deviceTokensTable.addGlobalSecondaryIndex({
+            indexName: 'DeviceIdIndex',
+            partitionKey: {
+                name: 'device_id', type: AttributeType.STRING
+            },
+            sortKey: {
+                name: 'user_id', type: AttributeType.STRING
+            },
+        });
+        deviceTokensTable.grantFullAccess(apiBackendFunction);
+        deviceTokensTable.grantFullAccess(webSocketBackendFunction);
+        apiBackendFunction.addEnvironment('DEVICE_TOKENS_TABLE_NAME', deviceTokensTable.tableName);
+        webSocketBackendFunction.addEnvironment('DEVICE_TOKENS_TABLE_NAME', deviceTokensTable.tableName);
+
+        // SNS Platform Application for Android (FCM)
+        // Note: Platform Application is created manually and passed in via props
+        // This allows for environment-specific Platform Applications (beta/prod)
+
+        // Grant SNS permissions to Lambda functions
+        const snsPolicy = new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [
+                'sns:Publish',
+                'sns:CreatePlatformEndpoint',
+                'sns:DeleteEndpoint',
+                'sns:GetEndpointAttributes',
+                'sns:SetEndpointAttributes',
+            ],
+            resources: [
+                props.snsPlatformApplicationArn,
+                `${props.snsPlatformApplicationArn}/*`,
+            ],
+        });
+
+        apiBackendFunction.addToRolePolicy(snsPolicy);
+        webSocketBackendFunction.addToRolePolicy(snsPolicy);
+
+        // Add SNS environment variables
+        apiBackendFunction.addEnvironment('SNS_PLATFORM_APPLICATION_ARN', props.snsPlatformApplicationArn);
+        webSocketBackendFunction.addEnvironment('SNS_PLATFORM_APPLICATION_ARN', props.snsPlatformApplicationArn);
 
         // JOIN TABLES
     }

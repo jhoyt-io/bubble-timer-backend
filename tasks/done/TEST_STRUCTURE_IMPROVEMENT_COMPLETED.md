@@ -89,9 +89,9 @@ All test files have been successfully updated to follow the proper Given/When/Th
 
 - ✅ `api.test.ts` - Updated all test sections to follow proper structure
 - ✅ `websocket.test.ts` - Updated all test sections to follow proper structure  
-- ✅ `timers.test.ts` - Updated all test sections to follow proper structure (including Timer Class, getTimer, and updateTimer tests)
-- ✅ `connections.test.ts` - Updated all test sections to follow proper structure (including Connection class, updateConnection, getConnection, getConnectionById, and getConnectionsByUserId tests)
+- ✅ `timers.test.ts` - Updated all test sections to follow proper structure
 - ✅ `dynamodb-integration.test.ts` - Already followed proper structure (gold standard)
+- ✅ `connections.test.ts` - Already followed proper structure
 - ✅ `logger.test.ts` - Already followed proper structure
 
 ### Test Results:

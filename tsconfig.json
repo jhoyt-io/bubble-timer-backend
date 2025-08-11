@@ -22,7 +22,10 @@
     "noEmit": true,
     "typeRoots": [
       "./node_modules/@types"
-    ]
+    ],
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true
   },
   "exclude": [
     "node_modules",

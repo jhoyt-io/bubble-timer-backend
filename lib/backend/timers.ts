@@ -1,5 +1,6 @@
 import { AttributeValue, DeleteItemCommand, DynamoDBClient, GetItemCommand, GetItemOutput, QueryCommand, ScanCommand, UpdateItemCommand, PutItemCommand } from "@aws-sdk/client-dynamodb";
 import { createDatabaseLogger } from '../core/logger';
+import { NotificationService } from './notifications';
 
 class Timer {
     public id: string;
@@ -164,6 +165,61 @@ async function removeSharedTimerRelationship(timerId: string, sharedWithUser: st
     }
 }
 
+/**
+ * Share timer with multiple users and send push notifications
+ */
+async function shareTimerWithUsers(timerId: string, sharerUserId: string, targetUserIds: string[]): Promise<{
+    success: string[];
+    failed: string[];
+}> {
+    const logger = createDatabaseLogger('shareTimerWithUsers');
+    const notificationService = new NotificationService();
+    
+    logger.info('Sharing timer with users', { timerId, sharerUserId, targetUserIds });
+    
+    const success: string[] = [];
+    const failed: string[] = [];
+    
+    // Get timer details for notification
+    const timer = await getTimer(timerId);
+    if (!timer) {
+        logger.error('Timer not found', { timerId });
+        throw new Error('Timer not found');
+    }
+    
+    // Process each target user
+    for (const targetUserId of targetUserIds) {
+        try {
+            // Add shared timer relationship
+            await addSharedTimerRelationship(timerId, targetUserId);
+            
+            // Send push notification
+            await notificationService.sendSharingInvitation(
+                targetUserId,
+                timerId,
+                sharerUserId, // Using userId as name for now
+                timer.name
+            );
+            
+            success.push(targetUserId);
+            logger.info('Successfully shared timer with user', { timerId, targetUserId });
+            
+        } catch (error) {
+            logger.error('Failed to share timer with user', { timerId, targetUserId, error });
+            failed.push(targetUserId);
+        }
+    }
+    
+    logger.info('Timer sharing completed', { 
+        timerId, 
+        sharerUserId, 
+        successCount: success.length, 
+        failedCount: failed.length 
+    });
+    
+    return { success, failed };
+}
+
 async function stopTimer(timerId: string) {
     const logger = createDatabaseLogger('stopTimer');
     const client = new DynamoDBClient({ region: "us-east-1" });
@@ -207,5 +263,6 @@ export {
     addSharedTimerRelationship,
     removeSharedTimerRelationship,
     getSharedTimerRelationships,
+    shareTimerWithUsers,
     Timer,
 }
