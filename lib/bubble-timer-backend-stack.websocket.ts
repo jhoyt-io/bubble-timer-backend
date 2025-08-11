@@ -6,7 +6,6 @@ import {
     Timer, 
     updateTimer, 
     getTimer,
-    addSharedTimerRelationship,
     removeSharedTimerRelationship,
     getSharedTimerRelationships
 } from "./backend/timers";
@@ -169,24 +168,6 @@ export async function handler(event: any, context: any) {
                                 data.timer.remainingDuration,
                                 data.timer.timerEnd
                             ));
-                            
-                            // Manage shared timer relationships
-                            const currentSharedUsers = await getSharedTimerRelationships(data.timer.id);
-                            const newSharedUsers = data.shareWith || [];
-                            
-                            // Add new relationships
-                            for (const sharedUser of newSharedUsers) {
-                                if (!currentSharedUsers.includes(sharedUser)) {
-                                    await addSharedTimerRelationship(data.timer.id, sharedUser);
-                                }
-                            }
-                            
-                            // Remove outdated relationships
-                            for (const currentUser of currentSharedUsers) {
-                                if (!newSharedUsers.includes(currentUser)) {
-                                    await removeSharedTimerRelationship(data.timer.id, currentUser);
-                                }
-                            }
                         }
 
                         // Stop timer in ddb (after sending messages to all shared users)

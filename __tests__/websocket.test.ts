@@ -1,5 +1,5 @@
 import { handler } from '../lib/bubble-timer-backend-stack.websocket';
-import { getSharedTimerRelationships, stopTimer, removeSharedTimerRelationship, updateTimer, addSharedTimerRelationship } from '../lib/backend/timers';
+import { getSharedTimerRelationships, stopTimer, removeSharedTimerRelationship, updateTimer } from '../lib/backend/timers';
 import { getConnectionById, updateConnection, getConnectionsByUserId } from '../lib/backend/connections';
 
 // Mock the backend modules
@@ -39,7 +39,6 @@ const mockGetSharedTimerRelationships = getSharedTimerRelationships as jest.Mock
 const mockStopTimer = stopTimer as jest.MockedFunction<typeof stopTimer>;
 const mockRemoveSharedTimerRelationship = removeSharedTimerRelationship as jest.MockedFunction<typeof removeSharedTimerRelationship>;
 const mockUpdateTimer = updateTimer as jest.MockedFunction<typeof updateTimer>;
-const mockAddSharedTimerRelationship = addSharedTimerRelationship as jest.MockedFunction<typeof addSharedTimerRelationship>;
 const mockGetConnectionById = getConnectionById as jest.MockedFunction<typeof getConnectionById>;
 const mockUpdateConnection = updateConnection as jest.MockedFunction<typeof updateConnection>;
 const mockGetConnectionsByUserId = getConnectionsByUserId as jest.MockedFunction<typeof getConnectionsByUserId>;
@@ -332,7 +331,7 @@ describe('WebSocket Handler', () => {
     });
 
     describe('updateTimer', () => {
-        describe('Given an updateTimer request with shared relationships', () => {
+        describe('Given an updateTimer request with shared users', () => {
             const event = {
                 requestContext: {
                     connectionId: 'test-connection-id',
@@ -363,20 +362,17 @@ describe('WebSocket Handler', () => {
                 // Mock the shared users for this timer
                 mockGetSharedTimerRelationships.mockResolvedValue(['user1', 'user3']);
                 mockUpdateTimer.mockResolvedValue();
-                mockRemoveSharedTimerRelationship.mockResolvedValue();
-                mockAddSharedTimerRelationship.mockResolvedValue();
             });
 
             describe('When updating the timer', () => {
-                test('Then the timer should be updated and shared relationships managed', async () => {
+                test('Then the timer should be updated and broadcast to existing shared users', async () => {
                     // When
                     const result = await handler(event, {});
 
                     // Then
                     expect(mockGetSharedTimerRelationships).toHaveBeenCalledWith('test-timer-id');
                     expect(mockUpdateTimer).toHaveBeenCalled();
-                    expect(mockAddSharedTimerRelationship).toHaveBeenCalledWith('test-timer-id', 'user2');
-                    expect(mockRemoveSharedTimerRelationship).toHaveBeenCalledWith('test-timer-id', 'user3');
+                    // Note: Shared timer relationships are now managed by REST API, not WebSocket
                 });
             });
         });
@@ -409,16 +405,16 @@ describe('WebSocket Handler', () => {
             };
 
             beforeEach(() => {
-                mockGetSharedTimerRelationships.mockResolvedValue(['user1', 'user2']);
+                mockGetSharedTimerRelationships.mockResolvedValue([]);
                 mockUpdateTimer.mockResolvedValue();
-                mockRemoveSharedTimerRelationship.mockResolvedValue();
             });
 
-            test('should remove all existing shared relationships', async () => {
+            test('should update the timer without managing shared relationships', async () => {
                 const result = await handler(event, {});
 
-                expect(mockRemoveSharedTimerRelationship).toHaveBeenCalledWith('test-timer-id', 'user1');
-                expect(mockRemoveSharedTimerRelationship).toHaveBeenCalledWith('test-timer-id', 'user2');
+                expect(mockUpdateTimer).toHaveBeenCalled();
+                expect(mockGetSharedTimerRelationships).toHaveBeenCalledWith('test-timer-id');
+                // Note: Shared timer relationships are now managed by REST API, not WebSocket
             });
         });
     });

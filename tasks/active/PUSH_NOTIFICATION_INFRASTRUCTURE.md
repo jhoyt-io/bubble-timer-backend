@@ -17,6 +17,8 @@ The current Bubble Timer app has a task for implementing push notifications usin
 
 **Note**: The timer sharing backend issue has been resolved. The backend now accepts timer data and creates timers in the database if they don't exist, preventing "Timer not found" errors when sharing locally-created timers.
 
+**Note**: WebSocket cleanup completed. Removed redundant shared timer relationship management logic from WebSocket `updateTimer` handler since this is now handled entirely by the REST API. This improves performance, reduces complexity, and provides better separation of concerns.
+
 ## Implementation Progress
 
 ### Phase 1: AWS SNS Infrastructure Setup (CDK-Driven) ✅ COMPLETED
