@@ -19,6 +19,8 @@ The current Bubble Timer app has a task for implementing push notifications usin
 
 **Note**: WebSocket cleanup completed. Removed redundant shared timer relationship management logic from WebSocket `updateTimer` handler since this is now handled entirely by the REST API. This improves performance, reduces complexity, and provides better separation of concerns.
 
+**Note**: Sharer user exclusion enhancement completed. Added logic to prevent sharers from receiving push notifications or seeing timers they shared in the shared tab. This improves user experience by eliminating confusing notifications and maintaining clear ownership boundaries.
+
 ## Implementation Progress
 
 ### Phase 1: AWS SNS Infrastructure Setup (CDK-Driven) ✅ COMPLETED

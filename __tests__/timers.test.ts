@@ -628,5 +628,96 @@ describe('Timers Module', () => {
         });
       });
     });
+
+    describe('Given sharing with the sharer user', () => {
+      const mockItem = {
+        id: { S: 'timer123' },
+        user_id: { S: 'user123' },
+        name: { S: 'Test Timer' },
+        total_duration: { S: 'PT30M' },
+        remaining_duration: { S: 'PT15M' },
+        end_time: { S: '2024-01-01T12:30:00Z' }
+      };
+      
+      beforeEach(() => {
+        // Mock getTimer to return a timer
+        mockSend.mockResolvedValueOnce({ Item: mockItem });
+        // Mock addSharedTimerRelationship (PutItemCommand)
+        mockSend.mockResolvedValue({});
+        // Mock NotificationService
+        mockNotificationService.prototype.sendSharingInvitation = jest.fn().mockResolvedValue(undefined);
+      });
+
+      describe('When sharing the timer with the sharer user included in target list', () => {
+        test('Then the sharer should be skipped and not receive notifications', async () => {
+          // When
+          const result = await shareTimerWithUsers('timer123', 'user123', ['user456', 'user123', 'user789']);
+
+          // Then
+          expect(result.success).toEqual(['user456', 'user789']);
+          expect(result.failed).toEqual([]);
+          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user456', 'timer123', 'user123', 'Test Timer');
+          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user789', 'timer123', 'user123', 'Test Timer');
+          expect(mockNotificationService.prototype.sendSharingInvitation).not.toHaveBeenCalledWith('user123', 'timer123', 'user123', 'Test Timer');
+        });
+      });
+
+      describe('When sharing the timer with only the sharer user', () => {
+        test('Then no sharing should occur and no notifications sent', async () => {
+          // When
+          const result = await shareTimerWithUsers('timer123', 'user123', ['user123']);
+
+          // Then
+          expect(result.success).toEqual([]);
+          expect(result.failed).toEqual([]);
+          expect(mockNotificationService.prototype.sendSharingInvitation).not.toHaveBeenCalled();
+        });
+      });
+
+      describe('When sharing the timer with sharer user and other users', () => {
+        test('Then only other users should receive notifications', async () => {
+          // When
+          const result = await shareTimerWithUsers('timer123', 'user123', ['user123', 'user456']);
+
+          // Then
+          expect(result.success).toEqual(['user456']);
+          expect(result.failed).toEqual([]);
+          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledTimes(1);
+          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user456', 'timer123', 'user123', 'Test Timer');
+        });
+      });
+
+      describe('When creating timer from timer data with sharer in target list', () => {
+        const timerData = {
+          id: 'timer123',
+          userId: 'user123',
+          name: 'Test Timer',
+          totalDuration: 'PT30M',
+          remainingDuration: 'PT15M',
+          endTime: '2024-01-01T12:30:00Z'
+        };
+
+        beforeEach(() => {
+          // Mock getTimer to return null (timer not found)
+          mockSend.mockResolvedValueOnce({ Item: null });
+          // Mock updateTimer (PutItemCommand) for timer creation
+          mockSend.mockResolvedValue({});
+          // Mock addSharedTimerRelationship (PutItemCommand)
+          mockSend.mockResolvedValue({});
+        });
+
+        test('Then timer should be created and sharer should be skipped', async () => {
+          // When
+          const result = await shareTimerWithUsers('timer123', 'user123', ['user123', 'user456'], timerData);
+
+          // Then
+          expect(result.success).toEqual(['user456']);
+          expect(result.failed).toEqual([]);
+          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledTimes(1);
+          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user456', 'timer123', 'user123', 'Test Timer');
+          expect(mockNotificationService.prototype.sendSharingInvitation).not.toHaveBeenCalledWith('user123', 'timer123', 'user123', 'Test Timer');
+        });
+      });
+    });
   });
 }); 

@@ -211,6 +211,11 @@ async function shareTimerWithUsers(timerId: string, sharerUserId: string, target
     
     // Process each target user
     for (const targetUserId of targetUserIds) {
+        // Skip sharing with the sharer user
+        if (targetUserId === sharerUserId) {
+            continue;
+        }
+
         try {
             // Add shared timer relationship
             await addSharedTimerRelationship(timerId, targetUserId);
