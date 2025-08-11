@@ -80,11 +80,11 @@ export async function handler(event: any, context: any) {
                 } else if (event.httpMethod == 'POST') {
                     userLogger.info('Processing POST shared timer request');
                     const body = JSON.parse(event.body || '{}');
-                    const { timerId, userIds } = body;
+                    const { timerId, userIds, timer } = body;
                     
                     if (timerId && userIds && Array.isArray(userIds)) {
                         try {
-                            const result = await shareTimerWithUsers(timerId, cognitoUserName, userIds);
+                            const result = await shareTimerWithUsers(timerId, cognitoUserName, userIds, timer);
                             resultBody = JSON.stringify({
                                 result: 'shared',
                                 success: result.success,

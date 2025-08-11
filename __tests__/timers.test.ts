@@ -11,12 +11,16 @@ import {
 } from '../lib/backend/timers';
 import { TestLogger } from '../lib/core/test-logger';
 import { setLogger, LogLevel } from '../lib/core/logger';
+import { NotificationService } from '../lib/backend/notifications';
+import { shareTimerWithUsers } from '../lib/backend/timers';
 
 // Mock the DynamoDB client
 jest.mock('@aws-sdk/client-dynamodb');
+jest.mock('../lib/backend/notifications');
 
 const mockDynamoDBClient = DynamoDBClient as jest.MockedClass<typeof DynamoDBClient>;
 const mockSend = jest.fn();
+const mockNotificationService = NotificationService as jest.MockedClass<typeof NotificationService>;
 
 describe('Timers Module', () => {
   let testLogger: TestLogger;
@@ -537,6 +541,90 @@ describe('Timers Module', () => {
           expect(testLogger.hasMessage(/Added shared timer relationship: timer123 -> user4/)).toBe(true);
           expect(testLogger.hasMessage(/Removed shared timer relationship: timer123 -> user2/)).toBe(true);
           expect(testLogger.hasMessage(/Removed shared timer relationship: timer123 -> user3/)).toBe(true);
+        });
+      });
+    });
+  });
+
+  describe('shareTimerWithUsers', () => {
+    describe('Given a timer exists in the database', () => {
+      const mockItem = {
+        id: { S: 'timer123' },
+        user_id: { S: 'user123' },
+        name: { S: 'Test Timer' },
+        total_duration: { S: 'PT30M' },
+        remaining_duration: { S: 'PT15M' },
+        end_time: { S: '2024-01-01T12:30:00Z' }
+      };
+      
+      beforeEach(() => {
+        // Mock getTimer to return a timer
+        mockSend.mockResolvedValueOnce({ Item: mockItem });
+        // Mock addSharedTimerRelationship (PutItemCommand)
+        mockSend.mockResolvedValue({});
+        // Mock NotificationService
+        mockNotificationService.prototype.sendSharingInvitation = jest.fn().mockResolvedValue(undefined);
+      });
+
+      describe('When sharing the timer with users', () => {
+        test('Then the timer should be shared successfully', async () => {
+          // When
+          const result = await shareTimerWithUsers('timer123', 'user123', ['user456', 'user789']);
+
+          // Then
+          expect(result.success).toEqual(['user456', 'user789']);
+          expect(result.failed).toEqual([]);
+          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user456', 'timer123', 'user123', 'Test Timer');
+          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user789', 'timer123', 'user123', 'Test Timer');
+        });
+      });
+    });
+
+    describe('Given a timer does not exist but timer data is provided', () => {
+      const timerData = {
+        id: 'timer123',
+        userId: 'user123',
+        name: 'Test Timer',
+        totalDuration: 'PT30M',
+        remainingDuration: 'PT15M',
+        endTime: '2024-01-01T12:30:00Z'
+      };
+      
+      beforeEach(() => {
+        // Mock getTimer to return null (timer not found)
+        mockSend.mockResolvedValueOnce({ Item: null });
+        // Mock updateTimer (PutItemCommand)
+        mockSend.mockResolvedValue({});
+        // Mock addSharedTimerRelationship (PutItemCommand)
+        mockSend.mockResolvedValue({});
+        // Mock NotificationService
+        mockNotificationService.prototype.sendSharingInvitation = jest.fn().mockResolvedValue(undefined);
+      });
+
+      describe('When sharing the timer with users', () => {
+        test('Then the timer should be created and shared successfully', async () => {
+          // When
+          const result = await shareTimerWithUsers('timer123', 'user123', ['user456'], timerData);
+
+          // Then
+          expect(result.success).toEqual(['user456']);
+          expect(result.failed).toEqual([]);
+          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user456', 'timer123', 'user123', 'Test Timer');
+        });
+      });
+    });
+
+    describe('Given a timer does not exist and no timer data is provided', () => {
+      beforeEach(() => {
+        // Mock getTimer to return null (timer not found)
+        mockSend.mockResolvedValue({ Item: null });
+      });
+
+      describe('When sharing the timer with users', () => {
+        test('Then an error should be thrown', async () => {
+          // When & Then
+          await expect(shareTimerWithUsers('timer123', 'user123', ['user456']))
+            .rejects.toThrow('Timer not found');
         });
       });
     });

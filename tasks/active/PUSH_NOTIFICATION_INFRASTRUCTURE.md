@@ -9,8 +9,13 @@ Implement push notification support for the Bubble Timer backend using Amazon Si
 - [ ] Blocked
 - [ ] Completed
 
+**Current Phase**: Phase 4 (Timer Sharing Workflow) - 🔄 READY TO START
+**Next Phase**: Phase 5 (Monitoring and Observability) - Not started
+
 ## Background
 The current Bubble Timer app has a task for implementing push notifications using Firebase Cloud Messaging (FCM), but the backend is built entirely on AWS services. Adding Amazon SNS for push notifications provides better integration with the existing infrastructure and eliminates the need for external dependencies.
+
+**Note**: The timer sharing backend issue has been resolved. The backend now accepts timer data and creates timers in the database if they don't exist, preventing "Timer not found" errors when sharing locally-created timers.
 
 ## Implementation Progress
 
@@ -51,31 +56,29 @@ The current Bubble Timer app has a task for implementing push notifications usin
   - ✅ Maintain existing WebSocket for real-time sync after acceptance
   - ✅ Added notification preferences to user settings
 
-### Phase 3: Android App Integration
+### Phase 3: Android App Integration ✅ COMPLETED
 - **FCM Integration**
-  - [ ] Add Firebase Cloud Messaging dependency
-  - [ ] Implement `FirebaseMessagingService` for token management
-  - [ ] Create notification channels for different types
+  - ✅ Added Firebase Cloud Messaging dependency
+  - ✅ Implemented `BubbleTimerFirebaseMessagingService` for token management
+  - ✅ Created notification channels for timer invitations
 
 - **Token Registration Lifecycle**
-  - [ ] **App Startup**: Register FCM token when user authenticates (in `MainActivity.onCreate()`)
-  - [ ] **Token Refresh**: Handle FCM token refresh and re-register with backend
-  - [ ] **App Uninstall**: No cleanup needed (tokens become invalid automatically)
-  - [ ] **User Logout**: Remove device token from backend
-  - [ ] **Device ID**: Use existing `Secure.ANDROID_ID` for device identification
+  - ✅ **App Startup**: Register FCM token when user authenticates (in `MainActivity.onCreate()`)
+  - ✅ **Token Refresh**: Handle FCM token refresh and re-register with backend
+  - ✅ **App Uninstall**: No cleanup needed (tokens become invalid automatically)
+  - ✅ **User Logout**: Remove device token from backend (via `NotificationManager`)
+  - ✅ **Device ID**: Use existing `Secure.ANDROID_ID` for device identification
 
-### Phase 4: Timer Sharing Workflow
-- **Timer Invitation Notifications**
-  - [ ] Push notification when timer is shared via new REST API
-  - [ ] Rich notification with Accept/Decline actions
-  - [ ] Deep linking to invitation management in app
-  - [ ] Handle invitation response (accept/decline) via REST API
+### Phase 4: Timer Sharing Workflow 🔄 READY TO START
+**Focus**: Frontend Android app integration with existing backend infrastructure
 
-- **WebSocket Connection Management**
-  - [ ] Keep WebSocket disconnected by default
-  - [ ] Connect WebSocket only when user accepts shared timer
-  - [ ] Disconnect WebSocket when no shared timers are active
-  - [ ] Maintain existing real-time sync for accepted timers
+**Acceptance Criteria**:
+- [ ] **Push Notification Reception**: Android app receives push notification when timer is shared by another user
+- [ ] **Rich Notification Actions**: Notification displays Accept/Decline action buttons
+- [ ] **Deep Link Navigation**: When user taps notification body (not action buttons), app navigates to "SHARED" tab to show pending invitations
+- [ ] **Accept/Decline Handling**: App processes Accept/Decline actions via existing REST API endpoints
+- [ ] **Existing Flow Integration**: Reuse existing timer invitation acceptance/decline flow from "SHARED" tab
+- [ ] **WebSocket Behavior**: Maintain existing WebSocket connection behavior (connects when shared timers active, disconnects when none active)
 
 ### Phase 5: Monitoring and Observability
 - **CloudWatch Metrics**
@@ -97,6 +100,12 @@ The current Bubble Timer app has a task for implementing push notifications usin
 
 ## Core Requirements
 
+### Frontend Android App Focus
+- **Scope**: Implement push notification handling in Android app using existing backend infrastructure
+- **Backend Ready**: All backend infrastructure (SNS, notification service, API endpoints) is complete
+- **Existing Flow**: Reuse existing timer invitation acceptance/decline flow from "SHARED" tab
+- **WebSocket Behavior**: Maintain existing WebSocket connection behavior (no changes needed)
+
 ### Push Notification Strategy
 - **Primary Use Case**: Timer sharing invitations only
 - **WebSocket Strategy**: Keep WebSocket disconnected by default, only connect when user accepts shared timer
@@ -105,11 +114,12 @@ The current Bubble Timer app has a task for implementing push notifications usin
 - **Offline Support**: Push notifications ensure users receive sharing invitations even when offline
 
 ### Notification Flow
-1. User A shares timer with User B
+1. User A shares timer with User B (via existing REST API)
 2. Backend sends push notification to User B (offline/online)
-3. User B receives invitation notification with Accept/Decline actions
-4. If User B accepts → WebSocket connects → Real-time sync begins
-5. If User B declines → No further notifications, timer remains unshared
+3. User B receives invitation notification with Accept/Decline action buttons
+4. **Accept Action**: App calls existing REST API → WebSocket connects → Real-time sync begins
+5. **Decline Action**: App calls existing REST API → Timer remains unshared, no WebSocket connection
+6. **Notification Tap**: App navigates to "SHARED" tab to show pending invitations
 
 ## Implementation Plan
 
@@ -160,16 +170,12 @@ The current Bubble Timer app has a task for implementing push notifications usin
 
 ### Phase 4: Timer Sharing Workflow
 - **Timer Invitation Notifications**
-  - Push notification when timer is shared via new REST API
-  - Rich notification with Accept/Decline actions
-  - Deep linking to invitation management in app
-  - Handle invitation response (accept/decline) via REST API
-
-- **WebSocket Connection Management**
-  - Keep WebSocket disconnected by default
-  - Connect WebSocket only when user accepts shared timer
-  - Disconnect WebSocket when no shared timers are active
-  - Maintain existing real-time sync for accepted timers
+  - **Push Notification Reception**: Android app receives push notification when timer is shared by another user
+  - **Rich Notification Actions**: Notification displays Accept/Decline action buttons
+  - **Deep Link Navigation**: When user taps notification body (not action buttons), app navigates to "SHARED" tab to show pending invitations
+  - **Accept/Decline Handling**: App processes Accept/Decline actions via existing REST API endpoints
+  - **Existing Flow Integration**: Reuse existing timer invitation acceptance/decline flow from "SHARED" tab
+  - **WebSocket Behavior**: Maintain existing WebSocket connection behavior (connects when shared timers active, disconnects when none active)
 
 ### Phase 5: Monitoring and Observability
 - **CloudWatch Metrics**
@@ -393,6 +399,17 @@ interface NotificationPayload {
 - [2025-01-08] - Platform Application ARNs configured:
   - Beta: `arn:aws:sns:us-east-1:897729117121:app/GCM/BubbleTimer-Beta`
   - Prod: `arn:aws:sns:us-east-1:586794474099:app/GCM/BubbleTimer-Prod`
+- [2025-01-08] - Phase 3 Android App Integration completed:
+  - Added Firebase Cloud Messaging dependencies and Google Services plugin
+  - Created `BubbleTimerFirebaseMessagingService` for FCM token management
+  - Implemented `FcmTokenManager` for backend token registration
+  - Added FCM token registration to `MainActivity` on user authentication
+  - Created notification channels for timer invitations
+  - Added Firebase configuration and setup documentation
+  - Fixed pre-existing test logic bugs (not regressions from our changes)
+  - ✅ **VERIFIED**: Device successfully registered FCM token with backend
+  - ✅ **VERIFIED**: All 330 tests passing
+  - ✅ **READY**: Infrastructure foundation complete for Phase 4 implementation
 
 ## Related Files
 - `lib/bubble-timer-backend-stack.ts` - Infrastructure updates

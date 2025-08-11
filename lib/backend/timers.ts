@@ -168,7 +168,7 @@ async function removeSharedTimerRelationship(timerId: string, sharedWithUser: st
 /**
  * Share timer with multiple users and send push notifications
  */
-async function shareTimerWithUsers(timerId: string, sharerUserId: string, targetUserIds: string[]): Promise<{
+async function shareTimerWithUsers(timerId: string, sharerUserId: string, targetUserIds: string[], timerData?: any): Promise<{
     success: string[];
     failed: string[];
 }> {
@@ -181,9 +181,31 @@ async function shareTimerWithUsers(timerId: string, sharerUserId: string, target
     const failed: string[] = [];
     
     // Get timer details for notification
-    const timer = await getTimer(timerId);
+    let timer = await getTimer(timerId);
+    
+    // If timer doesn't exist but we have timer data, create it
+    if (!timer && timerData) {
+        logger.info('Timer not found in backend, creating from provided data', { timerId });
+        try {
+            timer = new Timer(
+                timerData.id || timerId,
+                timerData.userId || sharerUserId,
+                timerData.name || 'Shared Timer',
+                timerData.totalDuration || 'PT30M',
+                timerData.remainingDuration,
+                timerData.endTime
+            );
+            
+            await updateTimer(timer);
+            logger.info('Successfully created timer in backend', { timerId });
+        } catch (error) {
+            logger.error('Failed to create timer in backend', { timerId, error });
+            throw new Error('Failed to create timer in backend');
+        }
+    }
+    
     if (!timer) {
-        logger.error('Timer not found', { timerId });
+        logger.error('Timer not found and no timer data provided', { timerId });
         throw new Error('Timer not found');
     }
     
