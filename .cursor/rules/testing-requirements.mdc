@@ -2,7 +2,7 @@
 ---
 description: "Testing Requirements - Comprehensive testing guidelines with WebSocket focus"
 globs: ["**/*.ts", "**/*.js", "__tests__/**/*"]
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Testing Requirements
