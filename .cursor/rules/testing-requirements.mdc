@@ -15,6 +15,193 @@ When working with TypeScript/JavaScript files or tests:
 - Simulate real device interactions in tests
 - Add integration tests for end-to-end flows
 - Test error scenarios and edge cases
+
+## Test Structure and Organization
+
+### Given-When-Then Pattern
+All tests should follow the **Given-When-Then** structure for clarity and consistency:
+
+```typescript
+describe('Given [context/setup]', () => {
+  describe('When [action/condition]', () => {
+    test('Then [expected outcome]', async () => {
+      // Test implementation
+    });
+  });
+});
+```
+
+### Test Grouping Principles
+
+#### 1. Group Related Test Scenarios
+- **Group tests by the same "Given" context** to avoid code duplication
+- **Use nested "When" blocks** to test different scenarios under the same setup
+- **Keep test setup DRY** by sharing common setup code within describe blocks
+
+#### 2. Example: SNS Error Handling
+```typescript
+describe('Given SNS encounters an error when publishing the notification', () => {
+  test('Then the error is handled gracefully without throwing', async () => {
+    // Tests publishing failures
+  });
+
+  test('Then platform endpoint creation failures are logged as warnings', async () => {
+    // Tests endpoint creation failures
+  });
+});
+```
+
+#### 3. Benefits of This Approach
+- **Reduced duplication**: Common setup code is shared
+- **Clear relationships**: Related test scenarios are grouped together
+- **Easier maintenance**: Changes to setup affect all related tests
+- **Better readability**: Test structure clearly shows what's being tested
+
+### Test Setup Patterns
+
+#### 1. Shared Setup in beforeEach
+```typescript
+describe('Given a user receives a timer sharing invitation', () => {
+  beforeEach(() => {
+    // Common setup for all tests in this group
+    mockDynamoSend.mockResolvedValueOnce({
+      Items: [/* common device data */]
+    });
+  });
+
+  describe('When the user has registered devices and allows notifications', () => {
+    test('Then a push notification is sent to all devices', async () => {
+      // Test-specific setup and assertions
+    });
+  });
+});
+```
+
+#### 2. Mock Configuration
+- **Use consistent mock patterns** across all tests
+- **Reset mocks in beforeEach** to ensure test isolation
+- **Group related mocks** by service (SNS, DynamoDB, etc.)
+
+### Error Testing Patterns
+
+#### 1. Exception Testing
+```typescript
+// For methods that should throw
+await expect(methodCall()).rejects.toThrow('Expected error message');
+```
+
+#### 2. Logging Verification
+```typescript
+// For methods that should log errors but not throw
+await methodCall();
+expect(testLogger.hasMessageAtLevel(/Error pattern/, LogLevel.ERROR)).toBe(true);
+```
+
+#### 3. Warning Verification
+```typescript
+// For methods that should log warnings
+await methodCall();
+expect(testLogger.hasMessageAtLevel(/Warning pattern/, LogLevel.WARN)).toBe(true);
+```
+
+### Test Data Management
+
+#### 1. Consistent Test Data
+- **Use realistic but simple test data**
+- **Define test data at the top of test files** for reuse
+- **Use descriptive variable names** that explain the test scenario
+
+#### 2. Mock Response Patterns
+```typescript
+// Consistent DynamoDB mock responses
+const mockDeviceItem = {
+  device_id: { S: 'device1' },
+  fcm_token: { S: 'token1' },
+  platform: { S: 'android' },
+  created_at: { S: '2023-01-01T00:00:00Z' }
+};
+```
+
+## Code Organization Principles
+
+### 1. DRY (Don't Repeat Yourself)
+- **Extract common test setup** into shared functions or beforeEach blocks
+- **Group related tests** under the same describe context
+- **Use consistent patterns** for similar test scenarios
+
+### 2. Single Responsibility
+- **Each test should verify one specific behavior**
+- **Test names should clearly describe what's being tested**
+- **Avoid testing multiple unrelated behaviors in one test**
+
+### 3. Readability
+- **Use descriptive test and describe names**
+- **Add comments for complex test logic**
+- **Structure tests to tell a story** about the system behavior
+
+## Implementation Guidelines
+
+### When Adding New Tests
+1. **Identify the existing test group** that matches your scenario
+2. **Add your test to the appropriate "When" block** if it fits
+3. **Create a new "When" block** if testing a different scenario
+4. **Create a new "Given" block** only if testing a completely different context
+
+### When Refactoring Tests
+1. **Look for common setup code** that can be extracted
+2. **Group related test scenarios** under the same context
+3. **Ensure test isolation** is maintained
+4. **Update test names** to reflect the new structure
+
+### When Debugging Tests
+1. **Check the test structure** to understand the setup
+2. **Verify mock configurations** are correct
+3. **Ensure test data** matches expected formats
+4. **Check for test isolation issues** (mocks not reset, etc.)
+
+## Examples
+
+### Good Test Structure
+```typescript
+describe('Given a user receives a timer sharing invitation', () => {
+  beforeEach(() => {
+    // Common setup for all invitation tests
+  });
+
+  describe('When the user has registered devices and allows notifications', () => {
+    test('Then a push notification is sent to all devices', async () => {
+      // Test implementation
+    });
+  });
+
+  describe('When SNS encounters an error', () => {
+    test('Then the error is handled gracefully without throwing', async () => {
+      // Test publishing failures
+    });
+
+    test('Then platform endpoint creation failures are logged as warnings', async () => {
+      // Test endpoint creation failures
+    });
+  });
+});
+```
+
+### Avoid This Structure
+```typescript
+// Don't create separate describe blocks for related scenarios
+describe('Given a user receives a timer sharing invitation', () => {
+  test('Then a push notification is sent to all devices', async () => {
+    // Duplicated setup code
+  });
+});
+
+describe('Given SNS encounters an error', () => {
+  test('Then the error is handled gracefully', async () => {
+    // Similar setup code duplicated
+  });
+});
+```
+
 - Use Given/When/Then pattern for all tests to tell a complete story
 - Structure tests as: `describe("Given [context]", () => { describe("When [action]", () => { test("Then [expected outcome]", () => { ... }) }) })`
 - Make test names descriptive and avoid "it should" patterns

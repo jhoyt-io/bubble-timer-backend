@@ -49,7 +49,8 @@
       "!lib/bubble-timer-backend-stack.ts",
       "!lib/bubble-timer-dns-stack.ts",
       "!lib/bubble-timer-pipeline-stack.ts",
-      "!lib/bubble-timer-users-stack.ts"
+      "!lib/bubble-timer-users-stack.ts",
+      "!lib/core/test-logger.ts"
     ],
     "coverageThreshold": {
       "global": {

@@ -87,7 +87,12 @@ export class NotificationService {
                 })
             );
 
-            await Promise.allSettled(notificationPromises);
+            const results = await Promise.allSettled(notificationPromises);
+            const failures = results.filter(r => r.status === 'rejected');
+            if (failures.length > 0) {
+                this.logger.warn('Some notifications failed', { failures });
+            }
+
             this.logger.info('Sharing invitation notifications sent', {
                 targetUserId,
                 timerId,
