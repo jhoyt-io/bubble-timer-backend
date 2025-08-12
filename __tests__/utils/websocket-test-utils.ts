@@ -11,6 +11,7 @@ export interface WebSocketEventOptions {
   eventType?: string;
   authorization?: string;
   deviceId?: string;
+  userId?: string;
   body?: any;
 }
 
@@ -99,7 +100,15 @@ export function createStopTimerEvent(
   options: WebSocketEventOptions = {}
 ): any {
   return createTimerWebSocketEvent('stopTimer', {
-    timerId
+    timerId,
+    timer: {
+      id: timerId,
+      userId: options.userId || 'test-user',
+      name: 'Test Timer',
+      totalDuration: 'PT30M',
+      remainingDuration: 'PT25M',
+      timerEnd: '2025-08-03T21:15:00Z'
+    }
   }, options);
 }
 

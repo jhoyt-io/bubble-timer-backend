@@ -248,7 +248,15 @@ describe('WebSocket Handler', () => {
                 body: JSON.stringify({
                     data: {
                         type: 'stopTimer',
-                        timerId: 'test-timer-id'
+                        timerId: 'test-timer-id',
+                        timer: {
+                            id: 'test-timer-id',
+                            userId: 'test-user',
+                            name: 'Test Timer',
+                            totalDuration: 'PT30M',
+                            remainingDuration: 'PT25M',
+                            timerEnd: '2025-08-03T21:15:00Z'
+                        }
                     }
                 })
             };
@@ -270,6 +278,8 @@ describe('WebSocket Handler', () => {
                     expect(mockRemoveSharedTimerRelationship).toHaveBeenCalledWith('test-timer-id', 'user1');
                     expect(mockRemoveSharedTimerRelationship).toHaveBeenCalledWith('test-timer-id', 'user3');
                     expect(mockRemoveSharedTimerRelationship).toHaveBeenCalledWith('test-timer-id', 'user4');
+                    // Should also send to original sharer (test-user) since they're in the timer data
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('test-user');
                     expect(mockStopTimer).toHaveBeenCalledWith('test-timer-id');
                 });
             });
@@ -287,6 +297,8 @@ describe('WebSocket Handler', () => {
                     // Then
                     expect(mockGetSharedTimerRelationships).toHaveBeenCalledWith('test-timer-id');
                     expect(mockRemoveSharedTimerRelationship).not.toHaveBeenCalled();
+                    // Should still send to original sharer (test-user) since they're in the timer data
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('test-user');
                     expect(mockStopTimer).toHaveBeenCalledWith('test-timer-id');
                 });
             });
@@ -307,7 +319,7 @@ describe('WebSocket Handler', () => {
                 });
             });
 
-            describe('When stopping a timer with shared users (no timer data)', () => {
+            describe('When stopping a timer with shared users (timer data included)', () => {
                 beforeEach(() => {
                     // Mock JWT to return test-user (default)
                     mockJwtVerify.mockResolvedValue({
@@ -319,7 +331,7 @@ describe('WebSocket Handler', () => {
                     mockRemoveSharedTimerRelationship.mockResolvedValue();
                 });
 
-                test('Then the stop should be broadcast to shared users without adding undefined sharer', async () => {
+                test('Then the stop should be broadcast to shared users AND the original sharer', async () => {
                     // When
                     const result = await handler(event, {});
 
@@ -330,13 +342,12 @@ describe('WebSocket Handler', () => {
                     // Should send to shared users
                     expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('shared-user-1');
                     expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('shared-user-2');
-                    // Should NOT try to add undefined sharer (since data.timer?.userId is undefined)
+                    // Should also send to original sharer (test-user) since they're in the timer data
+                    // Note: test-user is both the current user and the original sharer, so they get notified
                     expect(mockGetConnectionsByUserId).toHaveBeenCalledTimes(3); // Current user + 2 shared users
                     expect(mockStopTimer).toHaveBeenCalledWith('test-timer-id');
                     expect(result?.statusCode).toBe(200);
                 });
-
-
             });
 
             describe('When stopping a timer with timer data included', () => {
