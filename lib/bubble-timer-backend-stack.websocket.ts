@@ -128,8 +128,11 @@ export async function handler(event: any, context: any) {
 
 
 
-                    // Add messageId to outgoing messages
+                    // Send timer updates back to the user who sent the message
+                    // TODO: Why is this needed?
                     if (data.type === 'activeTimerList' || data.type === 'updateTimer' || data.type === 'stopTimer') {
+                        // Add messageId to outgoing messages
+                        // TODO: Why is this needed?
                         const messageWithId = {
                             ...data,
                             messageId: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
@@ -150,6 +153,12 @@ export async function handler(event: any, context: any) {
                             timerId: data.timerId || data.timer?.id,
                             sharedUserCount: currentSharedUsers.length 
                         });
+
+                        // Ensure the original sharer user is included in the list of users to send the message to
+                        const sharerUserId = data.timer?.userId;
+                        if (sharerUserId && sharerUserId !== cognitoUserName) {
+                            currentSharedUsers.push(sharerUserId);
+                        }
 
                         Promise.allSettled(
                             currentSharedUsers.map((userName: string) => {

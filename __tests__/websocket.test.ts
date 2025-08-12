@@ -44,8 +44,14 @@ const mockUpdateConnection = updateConnection as jest.MockedFunction<typeof upda
 const mockGetConnectionsByUserId = getConnectionsByUserId as jest.MockedFunction<typeof getConnectionsByUserId>;
 
 describe('WebSocket Handler', () => {
+    let mockJwtVerify: jest.Mock;
+
     beforeEach(() => {
         jest.clearAllMocks();
+        
+        // Get the mock JWT verify function
+        const { CognitoJwtVerifier } = require('aws-jwt-verify');
+        mockJwtVerify = CognitoJwtVerifier.create().verify;
         
         // Mock connection data
         mockGetConnectionById.mockResolvedValue({
@@ -300,6 +306,99 @@ describe('WebSocket Handler', () => {
                     expect(JSON.parse(result?.body || '{}')).toHaveProperty('error', 'Internal server error');
                 });
             });
+
+            describe('When stopping a timer with shared users (no timer data)', () => {
+                beforeEach(() => {
+                    // Mock JWT to return test-user (default)
+                    mockJwtVerify.mockResolvedValue({
+                        'cognito:username': 'test-user'
+                    });
+                    
+                    mockGetSharedTimerRelationships.mockResolvedValue(['shared-user-1', 'shared-user-2']);
+                    mockStopTimer.mockResolvedValue();
+                    mockRemoveSharedTimerRelationship.mockResolvedValue();
+                });
+
+                test('Then the stop should be broadcast to shared users without adding undefined sharer', async () => {
+                    // When
+                    const result = await handler(event, {});
+
+                    // Then
+                    expect(mockGetSharedTimerRelationships).toHaveBeenCalledWith('test-timer-id');
+                    // Should send to current user first (from first sendDataToUser call)
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('test-user');
+                    // Should send to shared users
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('shared-user-1');
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('shared-user-2');
+                    // Should NOT try to add undefined sharer (since data.timer?.userId is undefined)
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledTimes(3); // Current user + 2 shared users
+                    expect(mockStopTimer).toHaveBeenCalledWith('test-timer-id');
+                    expect(result?.statusCode).toBe(200);
+                });
+
+
+            });
+
+            describe('When stopping a timer with timer data included', () => {
+                const stopTimerWithDataEvent = {
+                    requestContext: {
+                        connectionId: 'non-sharer-connection-id',
+                        routeKey: 'sendmessage',
+                        eventType: 'MESSAGE'
+                    },
+                    headers: {
+                        Authorization: 'mock-jwt-token',
+                        DeviceId: 'non-sharer-device-id'
+                    },
+                    body: JSON.stringify({
+                        data: {
+                            type: 'stopTimer',
+                            timerId: 'test-timer-id',
+                            timer: {
+                                id: 'test-timer-id',
+                                userId: 'original-sharer', // Original sharer is different from current user
+                                name: 'Test Timer',
+                                totalDuration: 'PT30M',
+                                remainingDuration: 'PT25M',
+                                timerEnd: '2025-08-03T21:15:00Z'
+                            }
+                        }
+                    })
+                };
+
+                beforeEach(() => {
+                    // Mock JWT to return non-sharer user
+                    mockJwtVerify.mockResolvedValue({
+                        'cognito:username': 'non-sharer-user'
+                    });
+                    
+                    mockGetSharedTimerRelationships.mockResolvedValue(['shared-user-1', 'shared-user-2']);
+                    mockStopTimer.mockResolvedValue();
+                    mockRemoveSharedTimerRelationship.mockResolvedValue();
+                    
+                    // Mock connection for non-sharer
+                    mockGetConnectionById.mockResolvedValue({
+                        userId: 'non-sharer-user',
+                        deviceId: 'non-sharer-device-id',
+                        connectionId: 'non-sharer-connection-id'
+                    });
+                });
+
+                test('Then the stop should be broadcast to shared users AND the original sharer', async () => {
+                    // When
+                    const result = await handler(stopTimerWithDataEvent, {});
+
+                    // Then
+                    expect(mockGetSharedTimerRelationships).toHaveBeenCalledWith('test-timer-id');
+                    // Should send to shared users
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('shared-user-1');
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('shared-user-2');
+                    // Should also send to original sharer (since they're not the current user)
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('original-sharer');
+                    expect(mockStopTimer).toHaveBeenCalledWith('test-timer-id');
+                    expect(result?.statusCode).toBe(200);
+                });
+            });
         });
 
         describe('When receiving an updateTimer message', () => {
@@ -357,6 +456,192 @@ describe('WebSocket Handler', () => {
                     // Then
                     expect(result?.statusCode).toBe(500);
                     expect(JSON.parse(result?.body || '{}')).toHaveProperty('error', 'Internal server error');
+                });
+            });
+
+            describe('When updating a timer with shared users', () => {
+                beforeEach(() => {
+                    mockUpdateTimer.mockResolvedValue();
+                    mockGetSharedTimerRelationships.mockResolvedValue(['shared-user-1', 'shared-user-2']);
+                });
+
+                test('Then the update should be broadcast to all shared users', async () => {
+                    // When
+                    const result = await handler(event, {});
+
+                    // Then
+                    expect(mockGetSharedTimerRelationships).toHaveBeenCalledWith('test-timer-id');
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('shared-user-1');
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('shared-user-2');
+                    expect(mockUpdateTimer).toHaveBeenCalled();
+                    expect(result?.statusCode).toBe(200);
+                });
+            });
+
+            describe('When a non-sharer updates a timer', () => {
+                const nonSharerEvent = {
+                    requestContext: {
+                        connectionId: 'non-sharer-connection-id',
+                        routeKey: 'sendmessage',
+                        eventType: 'MESSAGE'
+                    },
+                    headers: {
+                        Authorization: 'mock-jwt-token',
+                        DeviceId: 'non-sharer-device-id'
+                    },
+                    body: JSON.stringify({
+                        data: {
+                            type: 'updateTimer',
+                            timer: {
+                                id: 'test-timer-id',
+                                userId: 'original-sharer', // Original sharer is different from current user
+                                name: 'Updated Timer Name',
+                                totalDuration: 'PT30M',
+                                remainingDuration: 'PT25M',
+                                timerEnd: '2025-08-03T21:15:00Z'
+                            }
+                        }
+                    })
+                };
+
+                beforeEach(() => {
+                    // Mock JWT to return non-sharer user
+                    mockJwtVerify.mockResolvedValue({
+                        'cognito:username': 'non-sharer-user'
+                    });
+                    
+                    mockUpdateTimer.mockResolvedValue();
+                    mockGetSharedTimerRelationships.mockResolvedValue(['shared-user-1', 'shared-user-2']);
+                    
+                    // Mock connection for non-sharer
+                    mockGetConnectionById.mockResolvedValue({
+                        userId: 'non-sharer-user',
+                        deviceId: 'non-sharer-device-id',
+                        connectionId: 'non-sharer-connection-id'
+                    });
+                });
+
+                test('Then the update should be broadcast to shared users AND the original sharer', async () => {
+                    // When
+                    const result = await handler(nonSharerEvent, {});
+
+                    // Then
+                    expect(mockGetSharedTimerRelationships).toHaveBeenCalledWith('test-timer-id');
+                    // Should send to shared users
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('shared-user-1');
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('shared-user-2');
+                    // Should also send to original sharer (since they're not the current user)
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('original-sharer');
+                    expect(mockUpdateTimer).toHaveBeenCalled();
+                    expect(result?.statusCode).toBe(200);
+                });
+            });
+
+            describe('When the original sharer updates their own timer', () => {
+                const sharerEvent = {
+                    requestContext: {
+                        connectionId: 'sharer-connection-id',
+                        routeKey: 'sendmessage',
+                        eventType: 'MESSAGE'
+                    },
+                    headers: {
+                        Authorization: 'mock-jwt-token',
+                        DeviceId: 'sharer-device-id'
+                    },
+                    body: JSON.stringify({
+                        data: {
+                            type: 'updateTimer',
+                            timer: {
+                                id: 'test-timer-id',
+                                userId: 'test-user', // Same as current user
+                                name: 'Updated Timer Name',
+                                totalDuration: 'PT30M',
+                                remainingDuration: 'PT25M',
+                                timerEnd: '2025-08-03T21:15:00Z'
+                            }
+                        }
+                    })
+                };
+
+                beforeEach(() => {
+                    // Mock JWT to return sharer user (same as timer userId)
+                    mockJwtVerify.mockResolvedValue({
+                        'cognito:username': 'test-user'
+                    });
+                    
+                    mockUpdateTimer.mockResolvedValue();
+                    mockGetSharedTimerRelationships.mockResolvedValue(['shared-user-1', 'shared-user-2']);
+                    
+                    // Mock connection for sharer
+                    mockGetConnectionById.mockResolvedValue({
+                        userId: 'test-user',
+                        deviceId: 'sharer-device-id',
+                        connectionId: 'sharer-connection-id'
+                    });
+                });
+
+                test('Then the update should be broadcast to shared users but NOT to the sharer themselves', async () => {
+                    // When
+                    const result = await handler(sharerEvent, {});
+
+                    // Then
+                    expect(mockGetSharedTimerRelationships).toHaveBeenCalledWith('test-timer-id');
+                    // Should send to current user first (from first sendDataToUser call)
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('test-user');
+                    // Should send to shared users
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('shared-user-1');
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('shared-user-2');
+                    // Should NOT add sharer again (since they're the current user)
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledTimes(3); // Current user + 2 shared users
+                    expect(mockUpdateTimer).toHaveBeenCalled();
+                    expect(result?.statusCode).toBe(200);
+                });
+            });
+
+            describe('When timer has no userId (edge case)', () => {
+                const noUserIdEvent = {
+                    requestContext: {
+                        connectionId: 'test-connection-id',
+                        routeKey: 'sendmessage',
+                        eventType: 'MESSAGE'
+                    },
+                    headers: {
+                        Authorization: 'mock-jwt-token',
+                        DeviceId: 'test-device-id'
+                    },
+                    body: JSON.stringify({
+                        data: {
+                            type: 'updateTimer',
+                            timer: {
+                                id: 'test-timer-id',
+                                // userId is missing
+                                name: 'Updated Timer Name',
+                                totalDuration: 'PT30M',
+                                remainingDuration: 'PT25M',
+                                timerEnd: '2025-08-03T21:15:00Z'
+                            }
+                        }
+                    })
+                };
+
+                beforeEach(() => {
+                    mockUpdateTimer.mockResolvedValue();
+                    mockGetSharedTimerRelationships.mockResolvedValue(['shared-user-1']);
+                });
+
+                test('Then the update should be broadcast to shared users without adding undefined sharer', async () => {
+                    // When
+                    const result = await handler(noUserIdEvent, {});
+
+                    // Then
+                    expect(mockGetSharedTimerRelationships).toHaveBeenCalledWith('test-timer-id');
+                    // Should send to current user first (from first sendDataToUser call)
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('test-user');
+                    // Should only send to shared users, not try to add undefined sharer
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledWith('shared-user-1');
+                    expect(mockGetConnectionsByUserId).toHaveBeenCalledTimes(2); // Current user + 1 shared user
+                    expect(mockUpdateTimer).toHaveBeenCalled();
+                    expect(result?.statusCode).toBe(200);
                 });
             });
         });
