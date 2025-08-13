@@ -9,3 +9,37 @@ cdk.out
 
 # Build output
 coverage/
+
+# Security - Environment files
+.env
+.env.local
+.env.production
+.env.test
+
+# Security - Credentials and keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
