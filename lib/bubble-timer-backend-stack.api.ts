@@ -105,9 +105,17 @@ export async function handler(event: any, context: any) {
                     }
                 } else if (event.httpMethod == 'DELETE') {
                     userLogger.info('Processing DELETE shared timer request');
+                    // Support both query parameter and body for timerId to stay compatible with clients
+                    const queryTimerId = event.queryStringParameters && event.queryStringParameters.timerId;
                     const body = JSON.parse(event.body || '{}');
-                    const timerId = body.timerId;
-                    
+                    const bodyTimerId = body.timerId;
+                    const timerId = queryTimerId || bodyTimerId;
+
+                    userLogger.debug('Parsed DELETE shared timer request params', {
+                        queryTimerId: queryTimerId ? '[present]' : '[absent]',
+                        bodyTimerId: bodyTimerId ? '[present]' : '[absent]'
+                    });
+
                     if (timerId) {
                         try {
                             await removeSharedTimerRelationship(timerId, cognitoUserName);
@@ -118,6 +126,7 @@ export async function handler(event: any, context: any) {
                             userLogger.error('Failed to remove shared timer relationship', { timerId }, error);
                         }
                     } else {
+                        // Keep legacy error message for test compatibility
                         resultBody = JSON.stringify({ 'error': 'Missing timerId in request body' });
                         userLogger.warn('Missing timerId in DELETE shared timer request');
                     }

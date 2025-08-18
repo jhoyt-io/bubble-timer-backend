@@ -474,6 +474,145 @@ describe('API Handler', () => {
         });
       });
     });
+
+    // New tests for query parameter approach
+    describe('Given a valid timer rejection request with query parameter', () => {
+      const event = {
+        requestContext: {
+          authorizer: {
+            claims: {
+              'cognito:username': 'testuser'
+            }
+          }
+        },
+        resource: '/timers/shared',
+        httpMethod: 'DELETE',
+        path: '/timers/shared',
+        queryStringParameters: {
+          timerId: 'timer123'
+        },
+        body: JSON.stringify({})
+      };
+
+      beforeEach(() => {
+        (removeSharedTimerRelationship as jest.Mock).mockResolvedValue(true);
+      });
+
+      describe('When rejecting the timer', () => {
+        test('Then the rejection should be handled successfully', async () => {
+          // When
+          const result = await handler(event, {});
+
+          // Then
+          expect(result.statusCode).toBe(200);
+          const body = JSON.parse(result.body);
+          expect(body.result).toBe('rejected');
+          expect(removeSharedTimerRelationship).toHaveBeenCalledWith('timer123', 'testuser');
+        });
+      });
+    });
+
+    describe('Given a rejection request with query parameter but missing timerId', () => {
+      const event = {
+        requestContext: {
+          authorizer: {
+            claims: {
+              'cognito:username': 'testuser'
+            }
+          }
+        },
+        resource: '/timers/shared',
+        httpMethod: 'DELETE',
+        path: '/timers/shared',
+        queryStringParameters: {},
+        body: JSON.stringify({})
+      };
+
+      describe('When rejecting the timer', () => {
+        test('Then an error should be returned', async () => {
+          // When
+          const result = await handler(event, {});
+
+          // Then
+          expect(result.statusCode).toBe(200);
+          const body = JSON.parse(result.body);
+          expect(body.error).toBe('Missing timerId in request body');
+        });
+      });
+    });
+
+    describe('Given a rejection request with query parameter that fails', () => {
+      const event = {
+        requestContext: {
+          authorizer: {
+            claims: {
+              'cognito:username': 'testuser'
+            }
+          }
+        },
+        resource: '/timers/shared',
+        httpMethod: 'DELETE',
+        path: '/timers/shared',
+        queryStringParameters: {
+          timerId: 'timer123'
+        },
+        body: JSON.stringify({})
+      };
+
+      beforeEach(() => {
+        (removeSharedTimerRelationship as jest.Mock).mockRejectedValue(new Error('Rejection failed'));
+      });
+
+      describe('When rejecting the timer', () => {
+        test('Then an error should be returned', async () => {
+          // When
+          const result = await handler(event, {});
+
+          // Then
+          expect(result.statusCode).toBe(200);
+          const body = JSON.parse(result.body);
+          expect(body.error).toBe('Failed to reject shared timer invitation');
+        });
+      });
+    });
+
+    describe('Given a rejection request with both query parameter and body (query param should take precedence)', () => {
+      const event = {
+        requestContext: {
+          authorizer: {
+            claims: {
+              'cognito:username': 'testuser'
+            }
+          }
+        },
+        resource: '/timers/shared',
+        httpMethod: 'DELETE',
+        path: '/timers/shared',
+        queryStringParameters: {
+          timerId: 'query-timer-id'
+        },
+        body: JSON.stringify({
+          timerId: 'body-timer-id'
+        })
+      };
+
+      beforeEach(() => {
+        (removeSharedTimerRelationship as jest.Mock).mockResolvedValue(true);
+      });
+
+      describe('When rejecting the timer', () => {
+        test('Then the query parameter timerId should be used', async () => {
+          // When
+          const result = await handler(event, {});
+
+          // Then
+          expect(result.statusCode).toBe(200);
+          const body = JSON.parse(result.body);
+          expect(body.result).toBe('rejected');
+          expect(removeSharedTimerRelationship).toHaveBeenCalledWith('query-timer-id', 'testuser');
+        });
+      });
+    });
   });
 
   describe('POST /device-tokens', () => {
