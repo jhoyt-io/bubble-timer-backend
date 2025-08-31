@@ -205,13 +205,34 @@ export async function handler(event: any, context: any) {
                                 "body": resultBody,
                             };
                         } else {
-                            const result = await uploadAvatar(userId, imageData);
+                            const requestedUsername = userId;
+                            
+                            // Only allow users to upload their own avatars
+                            if (requestedUsername !== cognitoUserName) {
+                                resultBody = JSON.stringify({ 'error': 'You can only upload your own avatar' });
+                                userLogger.warn('Attempted to upload avatar for different user', { requestedUsername, cognitoUserName });
+                                return {
+                                    "isBase64Encoded": false,
+                                    "statusCode": 403,
+                                    "headers": { 
+                                        "Access-Control-Allow-Headers" :  "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                                        "Access-Control-Allow-Origin": "http://localhost:4000",
+                                        "Access-Control-Allow-Methods": "OPTIONS,GET,POST,PUT,PATCH,DELETE",
+                                        "Content-Type": "application/json",
+                                    },
+                                    "body": resultBody,
+                                };
+                            }
+                            
+                            // Store avatar using the cognito username directly
+                            userLogger.debug('Uploading avatar with username', { cognitoUserName });
+                            const result = await uploadAvatar(cognitoUserName, imageData);
                             if (result.success) {
                                 resultBody = JSON.stringify({ avatarUrl: result.avatarUrl });
-                                userLogger.info('Avatar uploaded successfully', { userId });
+                                userLogger.info('Avatar uploaded successfully', { cognitoUserName });
                             } else {
                                 resultBody = JSON.stringify({ 'error': result.error });
-                                userLogger.warn('Avatar upload failed', { userId, error: result.error });
+                                userLogger.warn('Avatar upload failed', { cognitoUserName, error: result.error });
                                 return {
                                     "isBase64Encoded": false,
                                     "statusCode": 400,
@@ -230,29 +251,54 @@ export async function handler(event: any, context: any) {
                         userLogger.error('Failed to upload avatar', { userId }, error);
                     }
                 } else if (event.httpMethod == 'GET') {
-                    userLogger.info('Processing GET avatar request', { userId });
+                    const requestedUsername = userId;
+                    userLogger.info('Processing GET avatar request', { requestedUsername });
+                    
                     try {
-                        const avatarInfo = await getAvatar(userId);
+                        // Simple: just get the avatar using the username directly
+                        userLogger.debug('Getting avatar for username', { requestedUsername });
+                        const avatarInfo = await getAvatar(requestedUsername);
                         resultBody = JSON.stringify({ avatarUrl: avatarInfo.avatarUrl });
-                        userLogger.info('Avatar retrieved successfully', { userId });
+                        userLogger.info('Avatar retrieved successfully', { requestedUsername });
                     } catch (error) {
                         resultBody = JSON.stringify({ 'error': 'Failed to retrieve avatar' });
-                        userLogger.error('Failed to retrieve avatar', { userId }, error);
+                        userLogger.error('Failed to retrieve avatar', { requestedUsername }, error);
                     }
                 } else if (event.httpMethod == 'DELETE') {
-                    userLogger.info('Processing DELETE avatar request', { userId });
+                    const requestedUsername = userId;
+                    userLogger.info('Processing DELETE avatar request', { requestedUsername });
+                    
+                    // Only allow users to delete their own avatars
+                    if (requestedUsername !== cognitoUserName) {
+                        resultBody = JSON.stringify({ 'error': 'You can only delete your own avatar' });
+                        userLogger.warn('Attempted to delete avatar for different user', { requestedUsername, cognitoUserName });
+                        return {
+                            "isBase64Encoded": false,
+                            "statusCode": 403,
+                            "headers": { 
+                                "Access-Control-Allow-Headers" :  "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                                "Access-Control-Allow-Origin": "http://localhost:4000",
+                                "Access-Control-Allow-Methods": "OPTIONS,GET,POST,PUT,PATCH,DELETE",
+                                "Content-Type": "application/json",
+                            },
+                            "body": resultBody,
+                        };
+                    }
+                    
                     try {
-                        const result = await deleteAvatar(userId);
+                        // Delete avatar using username directly
+                        userLogger.debug('Deleting avatar for username', { cognitoUserName });
+                        const result = await deleteAvatar(cognitoUserName);
                         if (result.success) {
                             resultBody = JSON.stringify({ 'message': 'Avatar deleted successfully' });
-                            userLogger.info('Avatar deleted successfully', { userId });
+                            userLogger.info('Avatar deleted successfully', { cognitoUserName });
                         } else {
                             resultBody = JSON.stringify({ 'error': result.error });
-                            userLogger.warn('Avatar deletion failed', { userId, error: result.error });
+                            userLogger.warn('Avatar deletion failed', { cognitoUserName, error: result.error });
                         }
                     } catch (error) {
                         resultBody = JSON.stringify({ 'error': 'Failed to delete avatar' });
-                        userLogger.error('Failed to delete avatar', { userId }, error);
+                        userLogger.error('Failed to delete avatar', { cognitoUserName }, error);
                     }
                 }
             }
