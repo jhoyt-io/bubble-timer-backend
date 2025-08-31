@@ -142,6 +142,7 @@ export async function getAvatar(userId: string): Promise<AvatarInfo> {
 
         // Check if user has a custom avatar by listing objects with prefix
         const prefix = `avatars/${userId}-`;
+        logger.debug('Searching for avatars with prefix', { userId, prefix, bucketName, distributionDomain });
         
         try {
             const listCommand = new ListObjectsV2Command({
@@ -151,6 +152,7 @@ export async function getAvatar(userId: string): Promise<AvatarInfo> {
             });
             
             const listResult = await s3Client.send(listCommand);
+            logger.debug('S3 list result', { userId, prefix, contentsCount: listResult.Contents?.length || 0, keys: listResult.Contents?.map(c => c.Key) });
             
             if (listResult.Contents && listResult.Contents.length > 0) {
                 // User has a custom avatar - return the most recent one

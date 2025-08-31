@@ -323,6 +323,7 @@ export class BackendStack extends Stack {
                 's3:PutObject',
                 's3:DeleteObject',
                 's3:PutObjectAcl',
+                's3:ListBucket',
             ],
             resources: [
                 avatarBucket.bucketArn,
