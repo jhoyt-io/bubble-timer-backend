@@ -1,4 +1,3 @@
-
 ---
 description: "Documentation Standards - Guidelines for maintaining project documentation"
 globs: ["docs/**/*", "README.md", "**/*.md"]

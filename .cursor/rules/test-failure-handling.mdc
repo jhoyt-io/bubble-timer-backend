@@ -1,4 +1,3 @@
-
 ---
 description: "Test Failure Handling - Guidelines for handling test failures"
 globs: ["__tests__/**/*", "**/*.test.ts", "**/*.test.js"]

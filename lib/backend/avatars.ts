@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { createApiLogger } from '../core/logger';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
@@ -63,12 +63,21 @@ export async function uploadAvatar(userId: string, imageData: string): Promise<A
         }
 
         // In test environment, return a mock success response
-        if (process.env.NODE_ENV === 'test' || !bucketName || !distributionDomain) {
+        if (process.env.NODE_ENV === 'test') {
             logger.info('Mock avatar upload for test environment', { userId });
             const mockAvatarUrl = `https://mock-distribution.cloudfront.net/avatars/${userId}-${Date.now()}.${format}`;
             return {
                 success: true,
                 avatarUrl: mockAvatarUrl
+            };
+        }
+
+        // Check if we have the required environment variables
+        if (!bucketName || !distributionDomain) {
+            logger.warn('Missing S3 bucket or CloudFront domain configuration', { bucketName, distributionDomain });
+            return {
+                success: false,
+                error: 'Avatar storage not configured properly'
             };
         }
 
@@ -110,16 +119,61 @@ export async function getAvatar(userId: string): Promise<AvatarInfo> {
     const logger = createApiLogger('GET', userId);
     
     try {
-        // Check if user has a custom avatar
-        const key = `avatars/${userId}-*`;
+        // In test environment, return default avatar (no custom avatars in tests)
+        if (process.env.NODE_ENV === 'test') {
+            logger.info('Mock avatar retrieval for test environment', { userId });
+            const defaultAvatarUrl = `https://mock-distribution.cloudfront.net/default-avatar.png`;
+            return {
+                avatarUrl: defaultAvatarUrl,
+                defaultAvatar: true
+            };
+        }
+
+        // Check if we have the required environment variables
+        if (!bucketName || !distributionDomain) {
+            logger.warn('Missing S3 bucket or CloudFront domain configuration', { bucketName, distributionDomain });
+            // Return default avatar instead of mock for production environments
+            const defaultAvatarUrl = `https://${distributionDomain || 'default-distribution.cloudfront.net'}/default-avatar.png`;
+            return {
+                avatarUrl: defaultAvatarUrl,
+                defaultAvatar: true
+            };
+        }
+
+        // Check if user has a custom avatar by listing objects with prefix
+        const prefix = `avatars/${userId}-`;
         
-        // For now, return default avatar
-        // In a real implementation, you would check S3 for existing avatars
-        // and return the most recent one if it exists
+        try {
+            const listCommand = new ListObjectsV2Command({
+                Bucket: bucketName,
+                Prefix: prefix,
+                MaxKeys: 1 // We only need to know if any exist
+            });
+            
+            const listResult = await s3Client.send(listCommand);
+            
+            if (listResult.Contents && listResult.Contents.length > 0) {
+                // User has a custom avatar - return the most recent one
+                const mostRecent = listResult.Contents.reduce((latest, current) => {
+                    return (current.LastModified && latest.LastModified && 
+                            current.LastModified > latest.LastModified) ? current : latest;
+                });
+                
+                const avatarUrl = `https://${distributionDomain}/${mostRecent.Key}`;
+                logger.info('Custom avatar found', { userId, key: mostRecent.Key });
+                
+                return {
+                    avatarUrl,
+                    defaultAvatar: false
+                };
+            }
+        } catch (s3Error) {
+            logger.warn('Error checking S3 for custom avatar, falling back to default', { userId }, s3Error);
+        }
         
+        // No custom avatar found, return default
         const defaultAvatarUrl = `https://${distributionDomain}/default-avatar.png`;
-        
-        logger.info('Avatar retrieved', { userId, defaultAvatar: true });
+        logger.info('No custom avatar found, returning default', { userId });
         
         return {
             avatarUrl: defaultAvatarUrl,

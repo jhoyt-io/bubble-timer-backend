@@ -183,6 +183,13 @@ export async function handler(event: any, context: any) {
                         const body = JSON.parse(event.body || '{}');
                         const { imageData } = body;
                         
+                        // Debug logging
+                        userLogger.debug('Received imageData', { 
+                            hasImageData: !!imageData,
+                            imageDataLength: imageData ? imageData.length : 0,
+                            imageDataStart: imageData ? imageData.substring(0, Math.min(50, imageData.length)) : 'null'
+                        });
+                        
                         if (!imageData) {
                             resultBody = JSON.stringify({ 'error': 'Missing imageData in request body' });
                             userLogger.warn('Missing imageData in POST avatar request');

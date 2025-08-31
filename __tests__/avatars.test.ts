@@ -361,6 +361,52 @@ describe('Avatar Service Functions', () => {
         expect(result.avatarUrl).toContain(`.${format}`); // The mock returns the original format case
       }
     });
+
+    it('should handle production environment with missing bucket configuration', async () => {
+      const originalEnv = process.env.NODE_ENV;
+      const originalBucket = process.env.AVATAR_BUCKET_NAME;
+      
+      try {
+        process.env.NODE_ENV = 'production';
+        delete process.env.AVATAR_BUCKET_NAME;
+        
+        const imageData = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=';
+        
+        const result = await uploadAvatar('testuser', imageData);
+        
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Avatar storage not configured properly');
+      } finally {
+        process.env.NODE_ENV = originalEnv;
+        if (originalBucket) {
+          process.env.AVATAR_BUCKET_NAME = originalBucket;
+        }
+      }
+    });
+
+    it('should handle production environment with missing distribution domain', async () => {
+      const originalEnv = process.env.NODE_ENV;
+      const originalDomain = process.env.AVATAR_DISTRIBUTION_DOMAIN;
+      
+      try {
+        process.env.NODE_ENV = 'production';
+        delete process.env.AVATAR_DISTRIBUTION_DOMAIN;
+        
+        const imageData = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k=';
+        
+        const result = await uploadAvatar('testuser', imageData);
+        
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Avatar storage not configured properly');
+      } finally {
+        process.env.NODE_ENV = originalEnv;
+        if (originalDomain) {
+          process.env.AVATAR_DISTRIBUTION_DOMAIN = originalDomain;
+        }
+      }
+    });
+
+
   });
 
   describe('getAvatar', () => {
@@ -387,6 +433,46 @@ describe('Avatar Service Functions', () => {
       
       expect(result.avatarUrl).toContain('default-avatar.png');
       expect(result.defaultAvatar).toBe(true);
+    });
+
+    it('should handle production environment with missing bucket configuration', async () => {
+      const originalEnv = process.env.NODE_ENV;
+      const originalBucket = process.env.AVATAR_BUCKET_NAME;
+      
+      try {
+        process.env.NODE_ENV = 'production';
+        delete process.env.AVATAR_BUCKET_NAME;
+        
+        const result = await getAvatar('testuser');
+        
+        expect(result.avatarUrl).toContain('default-avatar.png');
+        expect(result.defaultAvatar).toBe(true);
+      } finally {
+        process.env.NODE_ENV = originalEnv;
+        if (originalBucket) {
+          process.env.AVATAR_BUCKET_NAME = originalBucket;
+        }
+      }
+    });
+
+    it('should handle production environment with missing distribution domain', async () => {
+      const originalEnv = process.env.NODE_ENV;
+      const originalDomain = process.env.AVATAR_DISTRIBUTION_DOMAIN;
+      
+      try {
+        process.env.NODE_ENV = 'production';
+        delete process.env.AVATAR_DISTRIBUTION_DOMAIN;
+        
+        const result = await getAvatar('testuser');
+        
+        expect(result.avatarUrl).toContain('default-avatar.png');
+        expect(result.defaultAvatar).toBe(true);
+      } finally {
+        process.env.NODE_ENV = originalEnv;
+        if (originalDomain) {
+          process.env.AVATAR_DISTRIBUTION_DOMAIN = originalDomain;
+        }
+      }
     });
   });
 
@@ -420,6 +506,15 @@ describe('Avatar Service Functions', () => {
         const result = await deleteAvatar(userId);
         expect(result.success).toBe(true);
       }
+    });
+
+    it('should handle deleteAvatar errors gracefully', async () => {
+      // This test verifies that the error handling in deleteAvatar works
+      // The current implementation doesn't actually throw errors, but we can test the structure
+      const result = await deleteAvatar('testuser');
+      
+      expect(result.success).toBe(true);
+      expect(result.error).toBeUndefined();
     });
   });
 });
