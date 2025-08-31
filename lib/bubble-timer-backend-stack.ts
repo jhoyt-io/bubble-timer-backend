@@ -10,6 +10,10 @@ import { WebSocketLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integra
 
 import { StringParameter } from "aws-cdk-lib/aws-ssm";
 import { PolicyStatement, Effect } from "aws-cdk-lib/aws-iam";
+import { Bucket, BlockPublicAccess, BucketEncryption } from "aws-cdk-lib/aws-s3";
+import { CloudFrontWebDistribution, ViewerProtocolPolicy } from "aws-cdk-lib/aws-cloudfront";
+import { OriginAccessIdentity } from "aws-cdk-lib/aws-cloudfront";
+import { Duration } from "aws-cdk-lib";
 
 
 export interface BackendStackProps extends StackProps {
@@ -90,6 +94,31 @@ export class BackendStack extends Stack {
             defaultCorsPreflightOptions: this.defaultCorsPreflightOptions,
         });
         deviceTokenResource.addMethod('ANY', undefined, {
+            authorizer: auth,
+            authorizationType: AuthorizationType.COGNITO,
+        });
+
+        // Avatar API endpoints
+        const usersResource = restApi.root.addResource('users', {
+            defaultCorsPreflightOptions: this.defaultCorsPreflightOptions,
+        });
+        usersResource.addMethod('ANY', undefined, {
+            authorizer: auth,
+            authorizationType: AuthorizationType.COGNITO,
+        });
+
+        const userResource = usersResource.addResource('{userId}', {
+            defaultCorsPreflightOptions: this.defaultCorsPreflightOptions,
+        });
+        userResource.addMethod('ANY', undefined, {
+            authorizer: auth,
+            authorizationType: AuthorizationType.COGNITO,
+        });
+
+        const avatarResource = userResource.addResource('avatar', {
+            defaultCorsPreflightOptions: this.defaultCorsPreflightOptions,
+        });
+        avatarResource.addMethod('ANY', undefined, {
             authorizer: auth,
             authorizationType: AuthorizationType.COGNITO,
         });
@@ -232,6 +261,80 @@ export class BackendStack extends Stack {
         // Add SNS environment variables
         apiBackendFunction.addEnvironment('SNS_PLATFORM_APPLICATION_ARN', props.snsPlatformApplicationArn);
         webSocketBackendFunction.addEnvironment('SNS_PLATFORM_APPLICATION_ARN', props.snsPlatformApplicationArn);
+
+        // Avatar Storage Infrastructure
+        const avatarBucket = new Bucket(this, 'AvatarBucket', {
+            bucketName: `bubble-timer-avatars-${this.account}-${this.region}`,
+            blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+            encryption: BucketEncryption.S3_MANAGED,
+            versioned: true,
+            lifecycleRules: [
+                {
+                    id: 'DeleteOldVersions',
+                    noncurrentVersionExpiration: Duration.days(30),
+                    enabled: true,
+                },
+            ],
+        });
+
+        // Create Origin Access Identity for CloudFront
+        const originAccessIdentity = new OriginAccessIdentity(this, 'AvatarOriginAccessIdentity', {
+            comment: 'OAI for Bubble Timer Avatar Bucket',
+        });
+
+        // Grant read access to CloudFront
+        avatarBucket.grantRead(originAccessIdentity);
+
+        // CloudFront Distribution for Avatar Delivery
+        const avatarDistribution = new CloudFrontWebDistribution(this, 'AvatarDistribution', {
+            originConfigs: [
+                {
+                    s3OriginSource: {
+                        s3BucketSource: avatarBucket,
+                        originAccessIdentity: originAccessIdentity,
+                    },
+                    behaviors: [
+                        {
+                            isDefaultBehavior: true,
+                            viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                        },
+                    ],
+                },
+            ],
+            errorConfigurations: [
+                {
+                    errorCode: 403,
+                    responseCode: 200,
+                    responsePagePath: '/default-avatar.png',
+                },
+                {
+                    errorCode: 404,
+                    responseCode: 200,
+                    responsePagePath: '/default-avatar.png',
+                },
+            ],
+        });
+
+        // Grant S3 permissions to Lambda functions for avatar operations
+        const avatarS3Policy = new PolicyStatement({
+            effect: Effect.ALLOW,
+            actions: [
+                's3:GetObject',
+                's3:PutObject',
+                's3:DeleteObject',
+                's3:PutObjectAcl',
+            ],
+            resources: [
+                avatarBucket.bucketArn,
+                `${avatarBucket.bucketArn}/*`,
+            ],
+        });
+
+        apiBackendFunction.addToRolePolicy(avatarS3Policy);
+
+        // Add avatar environment variables
+        apiBackendFunction.addEnvironment('AVATAR_BUCKET_NAME', avatarBucket.bucketName);
+        apiBackendFunction.addEnvironment('AVATAR_DISTRIBUTION_DOMAIN', avatarDistribution.distributionDomainName);
 
         // JOIN TABLES
     }

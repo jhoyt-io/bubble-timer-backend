@@ -1,5 +1,6 @@
 import { getTimer, updateTimer, Timer, getTimersSharedWithUser, removeSharedTimerRelationship, shareTimerWithUsers } from "./backend/timers";
 import { NotificationService } from "./backend/notifications";
+import { uploadAvatar, getAvatar, deleteAvatar } from "./backend/avatars";
 import { createApiLogger } from './core/logger';
 
 export async function handler(event: any, context: any) {
@@ -169,6 +170,82 @@ export async function handler(event: any, context: any) {
                     } catch (error) {
                         resultBody = JSON.stringify({ 'error': 'Failed to remove device token' });
                         userLogger.error('Failed to remove device token', { deviceId }, error);
+                    }
+                }
+            } else if (event.resource == '/users/{userId}/avatar') {
+                userLogger.debug('Processing AVATAR resource', { userId: splitPath[2] });
+                
+                const userId = splitPath[2];
+
+                if (event.httpMethod == 'POST') {
+                    userLogger.info('Processing POST avatar request', { userId });
+                    try {
+                        const body = JSON.parse(event.body || '{}');
+                        const { imageData } = body;
+                        
+                        if (!imageData) {
+                            resultBody = JSON.stringify({ 'error': 'Missing imageData in request body' });
+                            userLogger.warn('Missing imageData in POST avatar request');
+                            return {
+                                "isBase64Encoded": false,
+                                "statusCode": 400,
+                                "headers": { 
+                                    "Access-Control-Allow-Headers" :  "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                                    "Access-Control-Allow-Origin": "http://localhost:4000",
+                                    "Access-Control-Allow-Methods": "OPTIONS,GET,POST,PUT,PATCH,DELETE",
+                                    "Content-Type": "application/json",
+                                },
+                                "body": resultBody,
+                            };
+                        } else {
+                            const result = await uploadAvatar(userId, imageData);
+                            if (result.success) {
+                                resultBody = JSON.stringify({ avatarUrl: result.avatarUrl });
+                                userLogger.info('Avatar uploaded successfully', { userId });
+                            } else {
+                                resultBody = JSON.stringify({ 'error': result.error });
+                                userLogger.warn('Avatar upload failed', { userId, error: result.error });
+                                return {
+                                    "isBase64Encoded": false,
+                                    "statusCode": 400,
+                                    "headers": { 
+                                        "Access-Control-Allow-Headers" :  "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                                        "Access-Control-Allow-Origin": "http://localhost:4000",
+                                        "Access-Control-Allow-Methods": "OPTIONS,GET,POST,PUT,PATCH,DELETE",
+                                        "Content-Type": "application/json",
+                                    },
+                                    "body": resultBody,
+                                };
+                            }
+                        }
+                    } catch (error) {
+                        resultBody = JSON.stringify({ 'error': 'Failed to upload avatar' });
+                        userLogger.error('Failed to upload avatar', { userId }, error);
+                    }
+                } else if (event.httpMethod == 'GET') {
+                    userLogger.info('Processing GET avatar request', { userId });
+                    try {
+                        const avatarInfo = await getAvatar(userId);
+                        resultBody = JSON.stringify({ avatarUrl: avatarInfo.avatarUrl });
+                        userLogger.info('Avatar retrieved successfully', { userId });
+                    } catch (error) {
+                        resultBody = JSON.stringify({ 'error': 'Failed to retrieve avatar' });
+                        userLogger.error('Failed to retrieve avatar', { userId }, error);
+                    }
+                } else if (event.httpMethod == 'DELETE') {
+                    userLogger.info('Processing DELETE avatar request', { userId });
+                    try {
+                        const result = await deleteAvatar(userId);
+                        if (result.success) {
+                            resultBody = JSON.stringify({ 'message': 'Avatar deleted successfully' });
+                            userLogger.info('Avatar deleted successfully', { userId });
+                        } else {
+                            resultBody = JSON.stringify({ 'error': result.error });
+                            userLogger.warn('Avatar deletion failed', { userId, error: result.error });
+                        }
+                    } catch (error) {
+                        resultBody = JSON.stringify({ 'error': 'Failed to delete avatar' });
+                        userLogger.error('Failed to delete avatar', { userId }, error);
                     }
                 }
             }
