@@ -51,6 +51,16 @@ export class NotificationService {
             sharerAvatarUrl
         });
 
+        this.logger.debug('Notification payload details', {
+            targetUserId,
+            timerId,
+            sharerName,
+            timerName,
+            sharerAvatarUrl,
+            hasAvatarUrl: !!sharerAvatarUrl,
+            avatarUrlLength: sharerAvatarUrl?.length || 0
+        });
+
         try {
             // Get all device tokens for the target user
             const deviceTokens = await this.getDeviceTokens(targetUserId);
@@ -325,22 +335,28 @@ export class NotificationService {
                 throw new Error('Failed to create platform endpoint');
             }
 
-            // Prepare FCM message
+            // Prepare FCM message - DATA ONLY to ensure our custom service always handles it
             const fcmMessage = {
-                notification: {
-                    title: payload.title,
-                    body: payload.body
-                },
                 data: {
                     timerId: payload.data.timerId,
                     action: payload.data.action,
                     sharerName: payload.data.sharerName,
-                    timerName: payload.data.timerName
+                    timerName: payload.data.timerName,
+                    sharerAvatarUrl: payload.data.sharerAvatarUrl || '',
+                    // Include notification content in data so our service can create rich notifications
+                    notificationTitle: payload.title,
+                    notificationBody: payload.body
                 },
                 priority: payload.priority,
                 sound: payload.sound,
                 vibration: payload.vibration
             };
+
+            this.logger.debug('FCM message constructed', {
+                deviceId: deviceToken.deviceId,
+                fcmMessage: JSON.stringify(fcmMessage),
+                avatarUrl: payload.data.sharerAvatarUrl
+            });
 
             // Publish to SNS endpoint
             const publishCommand = new PublishCommand({
