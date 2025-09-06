@@ -1,6 +1,7 @@
 import { AttributeValue, DeleteItemCommand, DynamoDBClient, GetItemCommand, GetItemOutput, QueryCommand, ScanCommand, UpdateItemCommand, PutItemCommand } from "@aws-sdk/client-dynamodb";
 import { createDatabaseLogger } from '../core/logger';
 import { NotificationService } from './notifications';
+import { getAvatar } from './avatars';
 
 class Timer {
     public id: string;
@@ -220,12 +221,23 @@ async function shareTimerWithUsers(timerId: string, sharerUserId: string, target
             // Add shared timer relationship
             await addSharedTimerRelationship(timerId, targetUserId);
             
-            // Send push notification
+            // Get sharer's avatar URL for rich notification
+            let sharerAvatarUrl: string | undefined;
+            try {
+                const avatarInfo = await getAvatar(sharerUserId);
+                sharerAvatarUrl = avatarInfo.avatarUrl;
+                logger.debug('Retrieved sharer avatar URL', { sharerUserId, avatarUrl: sharerAvatarUrl });
+            } catch (avatarError) {
+                logger.warn('Failed to get sharer avatar URL, proceeding without avatar', { sharerUserId, avatarError });
+            }
+            
+            // Send push notification with avatar URL
             await notificationService.sendSharingInvitation(
                 targetUserId,
                 timerId,
                 sharerUserId, // Using userId as name for now
-                timer.name
+                timer.name,
+                sharerAvatarUrl
             );
             
             success.push(targetUserId);

@@ -13,57 +13,16 @@ When working with test files:
 - Focus on resolving test failures before proceeding with other work
 - Suggest debugging steps, test isolation, or specific fixes for the failing tests
 
-## Test Structure and Debugging
+## Debugging Test Failures
 
-### Writing Tests That Tell a Story
-- Write tests that tell a story about the system behavior
-- Use descriptive context in "Given" blocks
-- Make "When" blocks describe the specific action being tested
-- Use "Then" blocks to describe the expected outcome
-- Avoid repeating information between test description and expect statements
-- Focus on behavior and outcomes rather than implementation details
-- Make tests readable enough to serve as documentation
+### Common Patterns
+1. **Mock Not Called**: Check setup, verify code path, add debug logging
+2. **Unexpected Mock Calls**: Review setup, check for side effects, verify test isolation
+3. **Assertion Failures**: Check expected vs actual values, verify test data
+4. **Async Test Issues**: Ensure proper async/await usage, check for unhandled promises
 
-### Debugging Test Failures
-
-#### 1. Check Test Structure
-- **Verify the test follows Given-When-Then pattern**
-- **Check that setup code is in the right place** (beforeEach vs individual tests)
-- **Ensure test isolation** - mocks are reset between tests
-
-#### 2. Verify Mock Configurations
-- **Check that mocks are configured correctly** for the test scenario
-- **Verify mock return values** match expected data structures
-- **Ensure mocks are reset** in beforeEach or afterEach blocks
-
-#### 3. Validate Test Data
-- **Ensure test data matches expected formats** (DynamoDB items, API responses, etc.)
-- **Check that test data is realistic** and covers the scenario being tested
-- **Verify data consistency** across related tests
-
-#### 4. Test Isolation Issues
-- **Look for shared state** between tests that could cause interference
-- **Check for uncleaned mocks** that might affect subsequent tests
-- **Verify beforeEach/afterEach** cleanup is working correctly
-
-### Common Failure Patterns and Solutions
-
-#### 1. Mock Not Called
-- **Check mock setup** - ensure it's configured before the test
-- **Verify the code path** actually calls the mocked function
-- **Add debug logging** to trace execution flow
-
-#### 2. Unexpected Mock Calls
-- **Review test setup** - ensure mocks are configured for the specific scenario
-- **Check for side effects** in the code being tested
-- **Verify test isolation** - previous tests might have left mocks in unexpected state
-
-#### 3. Assertion Failures
-- **Check expected vs actual values** - ensure they match in format and content
-- **Verify test data** is correct for the scenario
-- **Review the assertion logic** - ensure it's testing the right thing
-
-#### 4. Async Test Issues
-- **Ensure proper async/await usage** in test functions
-- **Check for unhandled promises** that might cause test timeouts
-- **Verify mock async behavior** matches real service behavior
+### Key Checks
+- **Test Structure**: Given-When-Then pattern, proper setup placement
+- **Mock Configuration**: Correct setup, reset in beforeEach/afterEach
+- **Test Data**: Matches expected formats, realistic scenarios
+- **Test Isolation**: No shared state, clean mocks between tests

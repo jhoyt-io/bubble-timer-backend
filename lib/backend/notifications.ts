@@ -16,6 +16,7 @@ export interface NotificationPayload {
         action: 'accept' | 'decline';
         sharerName: string;
         timerName: string;
+        sharerAvatarUrl?: string;
     };
     priority: 'high';
     sound: true;
@@ -39,13 +40,15 @@ export class NotificationService {
         targetUserId: string,
         timerId: string,
         sharerName: string,
-        timerName: string
+        timerName: string,
+        sharerAvatarUrl?: string
     ): Promise<void> {
         this.logger.info('Sending sharing invitation notification', {
             targetUserId,
             timerId,
             sharerName,
-            timerName
+            timerName,
+            sharerAvatarUrl
         });
 
         try {
@@ -79,7 +82,8 @@ export class NotificationService {
                         timerId,
                         action: 'accept',
                         sharerName,
-                        timerName
+                        timerName,
+                        sharerAvatarUrl: sharerAvatarUrl || ''
                     },
                     priority: 'high',
                     sound: true,

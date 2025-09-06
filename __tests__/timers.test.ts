@@ -574,8 +574,8 @@ describe('Timers Module', () => {
           // Then
           expect(result.success).toEqual(['user456', 'user789']);
           expect(result.failed).toEqual([]);
-          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user456', 'timer123', 'user123', 'Test Timer');
-          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user789', 'timer123', 'user123', 'Test Timer');
+          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user456', 'timer123', 'user123', 'Test Timer', 'https://mock-distribution.cloudfront.net/default-avatar.png');
+          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user789', 'timer123', 'user123', 'Test Timer', 'https://mock-distribution.cloudfront.net/default-avatar.png');
         });
       });
     });
@@ -609,7 +609,7 @@ describe('Timers Module', () => {
           // Then
           expect(result.success).toEqual(['user456']);
           expect(result.failed).toEqual([]);
-          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user456', 'timer123', 'user123', 'Test Timer');
+          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user456', 'timer123', 'user123', 'Test Timer', 'https://mock-distribution.cloudfront.net/default-avatar.png');
         });
       });
     });
@@ -656,8 +656,8 @@ describe('Timers Module', () => {
           // Then
           expect(result.success).toEqual(['user456', 'user789']);
           expect(result.failed).toEqual([]);
-          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user456', 'timer123', 'user123', 'Test Timer');
-          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user789', 'timer123', 'user123', 'Test Timer');
+          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user456', 'timer123', 'user123', 'Test Timer', 'https://mock-distribution.cloudfront.net/default-avatar.png');
+          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user789', 'timer123', 'user123', 'Test Timer', 'https://mock-distribution.cloudfront.net/default-avatar.png');
           expect(mockNotificationService.prototype.sendSharingInvitation).not.toHaveBeenCalledWith('user123', 'timer123', 'user123', 'Test Timer');
         });
       });
@@ -683,7 +683,7 @@ describe('Timers Module', () => {
           expect(result.success).toEqual(['user456']);
           expect(result.failed).toEqual([]);
           expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledTimes(1);
-          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user456', 'timer123', 'user123', 'Test Timer');
+          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user456', 'timer123', 'user123', 'Test Timer', 'https://mock-distribution.cloudfront.net/default-avatar.png');
         });
       });
 
@@ -714,7 +714,7 @@ describe('Timers Module', () => {
           expect(result.success).toEqual(['user456']);
           expect(result.failed).toEqual([]);
           expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledTimes(1);
-          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user456', 'timer123', 'user123', 'Test Timer');
+          expect(mockNotificationService.prototype.sendSharingInvitation).toHaveBeenCalledWith('user456', 'timer123', 'user123', 'Test Timer', 'https://mock-distribution.cloudfront.net/default-avatar.png');
           expect(mockNotificationService.prototype.sendSharingInvitation).not.toHaveBeenCalledWith('user123', 'timer123', 'user123', 'Test Timer');
         });
       });

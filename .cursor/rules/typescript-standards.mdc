@@ -6,16 +6,12 @@ alwaysApply: false
 
 # TypeScript and Node.js Standards
 
-When working with TypeScript/JavaScript files:
 - Follow TypeScript best practices with proper typing
-- Use async/await patterns consistently
+- Use async/await patterns consistently  
 - Implement proper error handling with try/catch blocks
 - Follow Node.js and AWS Lambda best practices
 - Use appropriate logging levels and structured logging
 - Ensure proper resource cleanup and memory management
-- Provide clear explanations of issues and solutions
 - Always build and test locally after making changes
-- Fix any new errors introduced before proceeding
-- Add tests to cover new functionality or existing functionality that might be impacted
-- Document changes and reasoning in docs/ for significant changes
-- Clean up any unused code introduced with each change
+- Add tests to cover new functionality
+- Document significant changes in docs/
