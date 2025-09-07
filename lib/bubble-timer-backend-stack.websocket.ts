@@ -170,7 +170,8 @@ export async function handler(event: any, context: any) {
                             };
                             userLogger.info('Including stop timer user information', { 
                                 stoppedByUserId: cognitoUserName,
-                                timerId: data.timerId 
+                                timerId: data.timerId,
+                                messageData: JSON.stringify(messageData)
                             });
                         }
 
