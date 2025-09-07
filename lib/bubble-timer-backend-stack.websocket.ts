@@ -160,10 +160,24 @@ export async function handler(event: any, context: any) {
                             currentSharedUsers.push(sharerUserId);
                         }
 
+                        // For stopTimer messages, include information about who stopped the timer
+                        let messageData = data;
+                        if (data.type === 'stopTimer') {
+                            messageData = {
+                                ...data,
+                                stoppedByUserId: cognitoUserName,
+                                stoppedByUserName: cognitoUserName // For now, use the user ID as display name
+                            };
+                            userLogger.info('Including stop timer user information', { 
+                                stoppedByUserId: cognitoUserName,
+                                timerId: data.timerId 
+                            });
+                        }
+
                         Promise.allSettled(
                             currentSharedUsers.map((userName: string) => {
                                 userLogger.debug('Sending timer update to shared user', { userName });
-                                return sendDataToUser(userName, deviceId, data);
+                                return sendDataToUser(userName, deviceId, messageData);
                             })
                         );
 
